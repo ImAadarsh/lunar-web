@@ -1,36 +1,71 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Lunar Security Web Panel (Next.js)
 
-## Getting Started
+Role-based web dashboard for Lunar Security operations, connected to the existing backend API.
 
-First, run the development server:
+## Roles and Access
+
+- `Admin` (backend role `admin`): full admin console
+- `Manager` (backend role `supervisor`): operations + leave review
+- `Staff` (backend role `guard`): self-service workspace
+
+## What is implemented
+
+- Login with backend auth (`/auth/login`) and 2FA continuation (`/auth/login/2fa`)
+- Secure session cookie for web panel authentication
+- Route-level role guard middleware:
+  - `/admin` -> admin only
+  - `/manager` -> admin or supervisor
+  - `/staff` -> guard only
+- First dashboard pages wired to live backend data:
+  - Admin: KPIs, users, audit logs
+  - Manager: KPIs, shifts, pending leave requests
+  - Staff: profile, own shifts, notifications
+- Expanded module screens with live API integration:
+  - Admin: users, sites, checkpoints, payroll runs, report export jobs
+  - Manager: shift assignment, incidents/SOS status updates, leave approvals, certifications
+  - Staff: leave submission/cancel, incident creation, SOS trigger
+- Incident detail screens with attachment preview for Manager and Staff
+- Command center map page (`/manager/command-center`) for Admin/Manager roles
+- Attachment gallery modal with metadata + confirm-delete actions
+- Command center filter set (site/status/time window) with optional auto-refresh (off/10s/30s)
+- Branding route that serves logo assets from repository root:
+  - `/api/assets/logo?variant=transparent`
+  - `/api/assets/logo?variant=white`
+
+## Setup
+
+1. Install dependencies:
+
+```bash
+npm install
+```
+
+2. Create env file:
+
+```bash
+cp .env.example .env.local
+```
+
+3. Ensure backend is running on the configured API base (`BACKEND_API_BASE`).
+
+4. Start the app:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Then open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Environment
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `BACKEND_API_BASE` | No | `http://127.0.0.1:4000/api/v1` | Base URL of Lunar backend API |
+| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Map only | empty | Google Maps JS API key for command center map |
 
-## Learn More
+## Next development targets
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Complete update/edit workflows for each module (currently focused on create/list/core status updates)
+- Add richer bulk actions and saved filter presets for incident/shift operations
+- Real-time map and live incident command center
+- Advanced reporting filters and historical analytics
