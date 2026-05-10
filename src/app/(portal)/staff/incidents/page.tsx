@@ -1,7 +1,9 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { backendApiWithSession, backendMultipartApiWithSession } from "@/lib/backend";
+import { ApiErrorNotice } from "@/components/portal/api-error-notice";
+import { PortalModal } from "@/components/portal/portal-modal";
+import { apiErrorMessage, backendApiWithSession, backendMultipartApiWithSession } from "@/lib/backend";
 import { mutateBackend, requirePortalSession } from "@/lib/portal-mutations";
 import { getSessionFromCookies } from "@/lib/server-session";
 
@@ -31,6 +33,10 @@ export default async function StaffIncidentsPage() {
   ]);
   const sites = sitesRes.data?.items ?? [];
   const incidents = incidentsRes.data?.items ?? [];
+  const loadErrors = [
+    apiErrorMessage("Sites", sitesRes),
+    apiErrorMessage("Incidents", incidentsRes),
+  ];
 
   async function createIncidentAction(formData: FormData) {
     "use server";
@@ -102,54 +108,67 @@ export default async function StaffIncidentsPage() {
   }
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[460px_1fr]">
+    <div className="grid gap-4 2xl:grid-cols-[460px_1fr]">
+      <div className="2xl:col-span-2">
+        <ApiErrorNotice errors={loadErrors} />
+      </div>
       <section className="space-y-4">
         <article className="rounded-2xl bg-white p-5 shadow-sm">
           <h2 className="text-lg font-semibold text-slate-900">Create incident</h2>
-          <form action={createIncidentAction} className="mt-3 space-y-3">
-            <select
-              name="siteId"
-              required
-              defaultValue=""
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+          <p className="mt-1 text-sm text-slate-500">Report site issues with optional photo evidence.</p>
+          <div className="mt-3">
+            <PortalModal
+              triggerLabel="Create Incident"
+              title="Create incident"
+              description="Report a new incident and attach an optional evidence image."
+              triggerClassName="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800"
             >
-              <option value="" disabled>
-                Select site
-              </option>
-              {sites.map((site) => (
-                <option key={site.id} value={site.id}>
-                  {site.name}
-                </option>
-              ))}
-            </select>
-            <input
-              name="category"
-              required
-              placeholder="Category (theft, fire, maintenance)"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-            />
-            <input
-              name="title"
-              required
-              placeholder="Incident title"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-            />
-            <textarea
-              name="description"
-              rows={4}
-              placeholder="Description"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-            />
-            <input
-              name="evidence"
-              type="file"
-              accept="image/*"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-lunar-100 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-lunar-800"
-            />
-            <button className="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800">
-              Submit Incident
-            </button>
-          </form>
+              <form action={createIncidentAction} className="space-y-3">
+                <select
+                  name="siteId"
+                  required
+                  defaultValue=""
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+                >
+                  <option value="" disabled>
+                    Select site
+                  </option>
+                  {sites.map((site) => (
+                    <option key={site.id} value={site.id}>
+                      {site.name}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  name="category"
+                  required
+                  placeholder="Category (theft, fire, maintenance)"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+                />
+                <input
+                  name="title"
+                  required
+                  placeholder="Incident title"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+                />
+                <textarea
+                  name="description"
+                  rows={4}
+                  placeholder="Description"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+                />
+                <input
+                  name="evidence"
+                  type="file"
+                  accept="image/*"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-lunar-100 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-lunar-800"
+                />
+                <button className="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800">
+                  Submit Incident
+                </button>
+              </form>
+            </PortalModal>
+          </div>
         </article>
 
         <article className="rounded-2xl bg-white p-5 shadow-sm">
@@ -157,34 +176,43 @@ export default async function StaffIncidentsPage() {
           <p className="text-xs text-slate-500">
             Enter latest coordinates from device for emergency escalation.
           </p>
-          <form action={triggerSosAction} className="mt-3 space-y-3">
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                name="lat"
-                type="number"
-                step="any"
-                required
-                placeholder="Latitude"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-              />
-              <input
-                name="lng"
-                type="number"
-                step="any"
-                required
-                placeholder="Longitude"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-              />
-            </div>
-            <input
-              name="message"
-              placeholder="Message (optional)"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-            />
-            <button className="w-full rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-800">
-              Trigger SOS
-            </button>
-          </form>
+          <div className="mt-3">
+            <PortalModal
+              triggerLabel="Trigger SOS"
+              title="Trigger SOS"
+              description="Send an emergency alert using the latest known coordinates."
+              triggerClassName="w-full rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-800"
+            >
+              <form action={triggerSosAction} className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    name="lat"
+                    type="number"
+                    step="any"
+                    required
+                    placeholder="Latitude"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+                  />
+                  <input
+                    name="lng"
+                    type="number"
+                    step="any"
+                    required
+                    placeholder="Longitude"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+                  />
+                </div>
+                <input
+                  name="message"
+                  placeholder="Message (optional)"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+                />
+                <button className="w-full rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-800">
+                  Send SOS
+                </button>
+              </form>
+            </PortalModal>
+          </div>
         </article>
       </section>
 

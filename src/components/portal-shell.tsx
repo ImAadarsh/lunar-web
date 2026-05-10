@@ -37,8 +37,8 @@ export function PortalShell({ user, children }: PortalShellProps) {
   const allowed = links.filter((link) => link.roles.includes(user.role));
   return (
     <div className="min-h-screen bg-slate-100">
-      <div className="flex min-h-screen w-full gap-6 p-4 md:p-6">
-        <aside className="sticky top-4 hidden h-[calc(100vh-2rem)] w-80 flex-col rounded-2xl bg-lunar-950 p-5 text-white shadow-xl md:flex">
+      <div className="mx-auto flex min-h-screen w-full max-w-[1600px] flex-col gap-4 p-3 sm:p-4 lg:flex-row lg:gap-5 lg:p-6">
+        <aside className="sticky top-4 hidden h-[calc(100vh-2rem)] w-64 shrink-0 flex-col rounded-2xl bg-lunar-950 p-5 text-white shadow-xl lg:flex xl:w-72">
           <div className="flex items-center gap-3">
             <Image
               src="/api/assets/logo?variant=transparent"
@@ -72,17 +72,28 @@ export function PortalShell({ user, children }: PortalShellProps) {
           </div>
         </aside>
 
-        <div className="flex-1 space-y-4 overflow-x-auto">
+        <div className="min-w-0 flex-1 space-y-4 overflow-x-hidden">
           <header className="rounded-2xl bg-white px-5 py-4 shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-              <div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
                 <p className="text-xs uppercase tracking-[0.24em] text-lunar-700">Operations Panel</p>
-                <h1 className="text-xl font-bold text-lunar-950">
+                <h1 className="truncate text-xl font-bold text-lunar-950">
                   {webRoleLabel(user.role)} Workspace
                 </h1>
               </div>
               <LogoutButton />
             </div>
+            <nav className="mt-4 flex gap-2 overflow-x-auto pb-1 lg:hidden">
+              {allowed.map((link) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className="shrink-0 rounded-full border border-lunar-100 bg-lunar-50 px-3 py-1.5 text-xs font-semibold text-lunar-800"
+                >
+                  {link.label}
+                </Link>
+              ))}
+            </nav>
           </header>
           <main>{children}</main>
         </div>

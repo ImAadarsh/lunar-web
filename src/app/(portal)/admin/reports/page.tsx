@@ -1,7 +1,9 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { backendApiWithSession } from "@/lib/backend";
+import { ApiErrorNotice } from "@/components/portal/api-error-notice";
+import { PortalModal } from "@/components/portal/portal-modal";
+import { apiErrorMessage, backendApiWithSession } from "@/lib/backend";
 import { mutateBackend } from "@/lib/portal-mutations";
 import { getSessionFromCookies } from "@/lib/server-session";
 
@@ -22,6 +24,7 @@ type ExportJob = {
   type: string;
   createdAt: string;
   errorMessage?: string;
+  outputFormat?: string;
   downloadUrl?: string;
 };
 
@@ -40,10 +43,12 @@ export default async function AdminReportsPage({ searchParams }: ReportsPageProp
     ? await backendApiWithSession<ExportJob>(`/reports/exports/${jobId}`, session)
     : null;
   const job = jobRes?.data ?? null;
+  const loadErrors = [apiErrorMessage("Export job", jobRes)];
 
   async function queueExportAction(formData: FormData) {
     "use server";
     const type = String(formData.get("type") ?? "").trim();
+    const outputFormat = String(formData.get("outputFormat") ?? "csv").trim();
     const siteId = String(formData.get("siteId") ?? "").trim();
     const from = String(formData.get("from") ?? "").trim();
     const to = String(formData.get("to") ?? "").trim();
@@ -52,7 +57,7 @@ export default async function AdminReportsPage({ searchParams }: ReportsPageProp
     if (siteId) payload.siteId = Number(siteId);
     if (from) payload.from = from;
     if (to) payload.to = to;
-    const created = (await mutateBackend("/reports/exports", "POST", { type, params: payload })) as {
+    const created = (await mutateBackend("/reports/exports", "POST", { type, outputFormat, params: payload })) as {
       id?: number;
     };
     revalidatePath("/admin/reports");
@@ -60,50 +65,71 @@ export default async function AdminReportsPage({ searchParams }: ReportsPageProp
   }
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[420px_1fr]">
+    <div className="grid gap-4 2xl:grid-cols-[420px_1fr]">
+      <div className="2xl:col-span-2">
+        <ApiErrorNotice errors={loadErrors} />
+      </div>
       <section className="rounded-2xl bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-900">Queue export</h2>
         <p className="text-sm text-slate-500">Creates async report/export jobs on backend.</p>
-        <form action={queueExportAction} className="mt-3 space-y-3">
-          <select
-            name="type"
-            required
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-            defaultValue=""
+        <div className="mt-3">
+          <PortalModal
+            triggerLabel="Queue Export"
+            title="Queue export"
+            description="Choose report type, file format, and optional date/site filters."
+            triggerClassName="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800"
           >
-            <option value="" disabled>
-              Select export type
-            </option>
-            {exportTypes.map((type) => (
-              <option key={type.value} value={type.value}>
-                {type.label}
-              </option>
-            ))}
-          </select>
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              name="from"
-              type="date"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-              aria-label="From date"
-            />
-            <input
-              name="to"
-              type="date"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-              aria-label="To date"
-            />
-          </div>
-          <input
-            name="siteId"
-            type="number"
-            placeholder="Optional siteId"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-          />
-          <button className="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800">
-            Queue Export
-          </button>
-        </form>
+            <form action={queueExportAction} className="space-y-3">
+              <select
+                name="type"
+                required
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+                defaultValue=""
+              >
+                <option value="" disabled>
+                  Select export type
+                </option>
+                {exportTypes.map((type) => (
+                  <option key={type.value} value={type.value}>
+                    {type.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                name="outputFormat"
+                defaultValue="csv"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+              >
+                <option value="csv">CSV</option>
+                <option value="xlsx">Excel XLSX</option>
+                <option value="pdf">PDF summary</option>
+              </select>
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  name="from"
+                  type="date"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+                  aria-label="From date"
+                />
+                <input
+                  name="to"
+                  type="date"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+                  aria-label="To date"
+                />
+              </div>
+              <input
+                name="siteId"
+                type="number"
+                placeholder="Optional siteId"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+              />
+              <button className="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800">
+                Start Export
+              </button>
+            </form>
+          </PortalModal>
+        </div>
         <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
           Date range is required for attendance, staffing utilization, and patrol compliance exports.
         </div>
@@ -120,6 +146,9 @@ export default async function AdminReportsPage({ searchParams }: ReportsPageProp
             </p>
             <p>
               <span className="font-semibold text-slate-900">Type:</span> {job.type}
+            </p>
+            <p>
+              <span className="font-semibold text-slate-900">Format:</span> {job.outputFormat ?? "csv"}
             </p>
             <p>
               <span className="font-semibold text-slate-900">Status:</span> {job.status}

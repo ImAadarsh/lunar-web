@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { backendApiWithSession } from "@/lib/backend";
+import { ApiErrorNotice } from "@/components/portal/api-error-notice";
+import { apiErrorMessage, backendApiWithSession } from "@/lib/backend";
 import { getSessionFromCookies } from "@/lib/server-session";
-import { OperationsMap, type OpsMarker } from "@/components/operations/operations-map";
+import { OperationsMap, type OpsMarker, type OpsTrail } from "@/components/operations/operations-map";
 import { AutoRefreshControl } from "@/components/operations/auto-refresh-control";
 import { CommandEventFeed } from "@/components/operations/command-event-feed";
 
@@ -47,6 +48,19 @@ type KpiSummary = {
   activeSos: number;
   missedCheckpointsEstimate: number;
 };
+type TelemetryLatest = {
+  items: Array<{
+    userId: number;
+    email: string;
+    shiftId: number;
+    siteId: number;
+    lat: number;
+    lng: number;
+    accuracyM?: number;
+    recordedAt: string;
+  }>;
+};
+type TelemetryTrail = { items: Array<{ lat: number; lng: number; recordedAt: string }> };
 
 type CommandCenterPageProps = {
   searchParams: Promise<{
@@ -72,7 +86,7 @@ export default async function ManagerCommandCenterPage({ searchParams }: Command
 
   const commandParams = new URLSearchParams({ limit: "30" });
   if (siteId) commandParams.set("siteId", String(siteId));
-  const [sitesRes, shiftsRes, incidentsRes, sosRes, eventsRes, kpisRes] = await Promise.all([
+  const [sitesRes, shiftsRes, incidentsRes, sosRes, eventsRes, kpisRes, telemetryRes] = await Promise.all([
     backendApiWithSession<SiteList>("/sites", session),
     backendApiWithSession<ShiftList>(
       `/shifts${shiftStatus ? `?status=${encodeURIComponent(shiftStatus)}${siteId ? `&siteId=${siteId}` : ""}` : ""}`,
@@ -85,6 +99,7 @@ export default async function ManagerCommandCenterPage({ searchParams }: Command
     backendApiWithSession<SosList>("/sos", session),
     backendApiWithSession<CommandEventList>(`/command/events?${commandParams.toString()}`, session),
     backendApiWithSession<KpiSummary>("/dashboard/kpis", session),
+    backendApiWithSession<TelemetryLatest>("/telemetry/latest", session),
   ]);
 
   const sites = sitesRes.data?.items ?? [];
@@ -102,6 +117,34 @@ export default async function ManagerCommandCenterPage({ searchParams }: Command
     const inWindow = new Date(event.createdAt).getTime() >= cutoff;
     return matchesStatus && inWindow;
   });
+  const telemetry = (telemetryRes.data?.items ?? []).filter((point) => {
+    const matchesSite = siteId ? point.siteId === siteId : true;
+    const inWindow = new Date(point.recordedAt).getTime() >= cutoff;
+    return matchesSite && inWindow;
+  });
+  const primaryShiftId = telemetry[0]?.shiftId ?? activeShifts[0]?.id ?? null;
+  const trailRes = primaryShiftId
+    ? await backendApiWithSession<TelemetryTrail>(`/telemetry/trails?shiftId=${primaryShiftId}`, session)
+    : null;
+  const trails: OpsTrail[] = trailRes?.data?.items?.length
+    ? [
+        {
+          id: `trail-${primaryShiftId}`,
+          points: trailRes.data.items.map((p) => ({ lat: Number(p.lat), lng: Number(p.lng) })),
+          color: "#7c3aed",
+        },
+      ]
+    : [];
+  const loadErrors = [
+    apiErrorMessage("Sites", sitesRes),
+    apiErrorMessage("Shifts", shiftsRes),
+    apiErrorMessage("Incidents", incidentsRes),
+    apiErrorMessage("SOS events", sosRes),
+    apiErrorMessage("Command events", eventsRes),
+    apiErrorMessage("Dashboard KPIs", kpisRes),
+    apiErrorMessage("Live telemetry", telemetryRes),
+    apiErrorMessage("Telemetry trail", trailRes),
+  ];
 
   const markers: OpsMarker[] = [];
   for (const shift of activeShifts) {
@@ -135,9 +178,19 @@ export default async function ManagerCommandCenterPage({ searchParams }: Command
       type: "sos",
     });
   }
+  for (const point of telemetry) {
+    markers.push({
+      id: `telemetry-${point.userId}`,
+      lat: Number(point.lat),
+      lng: Number(point.lng),
+      label: `Guard ${point.userId}`,
+      type: "telemetry",
+    });
+  }
 
   return (
     <div className="space-y-4">
+      <ApiErrorNotice errors={loadErrors} />
       <section className="rounded-2xl bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-lg font-semibold text-slate-900">Filters</h2>
@@ -219,18 +272,19 @@ export default async function ManagerCommandCenterPage({ searchParams }: Command
       <section className="rounded-2xl bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-900">Real-time command center map</h2>
         <p className="text-sm text-slate-500">
-          Active shifts and open incidents use site geofence centers; SOS uses reported live coordinates.
+          Live guard telemetry, GPS trails, active shifts, open incidents, and SOS coordinates.
         </p>
         <div className="mt-4">
-          <OperationsMap markers={markers} />
+          <OperationsMap markers={markers} trails={trails} />
         </div>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <div className="grid gap-4 lg:grid-cols-3">
+      <section className="grid gap-4 2xl:grid-cols-[1.1fr_0.9fr]">
+        <div className="grid gap-4 lg:grid-cols-4">
           <FeedCard title="Active shifts" items={activeShifts.map((s) => `Shift #${s.id} • Guard ${s.userId} • Site ${s.siteId}`)} />
           <FeedCard title="Open incidents" items={openIncidents.map((i) => `Incident #${i.id} • Site ${i.siteId} • ${i.title}`)} />
           <FeedCard title="SOS queue" items={sosEvents.map((e) => `SOS #${e.id} • Guard ${e.userId} • ${e.status}`)} />
+          <FeedCard title="Live telemetry" items={telemetry.map((p) => `Guard ${p.userId} • Shift ${p.shiftId} • ${new Date(p.recordedAt).toLocaleTimeString()}`)} />
         </div>
         <CommandEventFeed initialEvents={eventsRes.data?.items ?? []} siteId={siteId || null} />
       </section>

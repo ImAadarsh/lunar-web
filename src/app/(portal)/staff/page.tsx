@@ -1,4 +1,5 @@
-import { backendApiWithSession } from "@/lib/backend";
+import { ApiErrorNotice } from "@/components/portal/api-error-notice";
+import { apiErrorMessage, backendApiWithSession } from "@/lib/backend";
 import { getSessionFromCookies } from "@/lib/server-session";
 import { redirect } from "next/navigation";
 
@@ -44,9 +45,17 @@ export default async function StaffPage() {
 
   const shifts = shiftsRes.data?.items ?? [];
   const notifications = notificationsRes.data?.items ?? [];
+  const loadErrors = [
+    apiErrorMessage("Profile", profileRes),
+    apiErrorMessage("Shifts", shiftsRes),
+    apiErrorMessage("Notifications", notificationsRes),
+  ];
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr]">
+    <div className="grid gap-4 2xl:grid-cols-[1.2fr_1fr]">
+      <div className="2xl:col-span-2">
+        <ApiErrorNotice errors={loadErrors} />
+      </div>
       <section className="space-y-4">
         <article className="rounded-2xl bg-white p-5 shadow-sm">
           <h2 className="text-lg font-semibold text-slate-900">My profile</h2>

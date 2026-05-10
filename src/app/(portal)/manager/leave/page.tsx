@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { backendApiWithSession } from "@/lib/backend";
+import { ApiErrorNotice } from "@/components/portal/api-error-notice";
+import { apiErrorMessage, backendApiWithSession } from "@/lib/backend";
 import { mutateBackend } from "@/lib/portal-mutations";
 import { getSessionFromCookies } from "@/lib/server-session";
 
@@ -25,6 +26,7 @@ export default async function ManagerLeavePage() {
 
   const leaveRes = await backendApiWithSession<LeaveRequestsResponse>("/leave-requests?limit=100", session);
   const requests = leaveRes.data?.items ?? [];
+  const loadErrors = [apiErrorMessage("Leave requests", leaveRes)];
 
   async function decisionAction(formData: FormData) {
     "use server";
@@ -43,6 +45,9 @@ export default async function ManagerLeavePage() {
     <section className="rounded-2xl bg-white p-5 shadow-sm">
       <h2 className="text-lg font-semibold text-slate-900">Leave request decisions</h2>
       <p className="text-sm text-slate-500">Approve or reject pending requests from guards.</p>
+      <div className="mt-3">
+        <ApiErrorNotice errors={loadErrors} />
+      </div>
       <ul className="mt-4 space-y-3">
         {requests.map((request) => (
           <li key={request.id} className="rounded-lg border border-slate-100 p-3">

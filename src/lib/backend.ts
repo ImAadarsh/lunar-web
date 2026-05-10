@@ -14,6 +14,21 @@ type ApiEnvelope<T> = {
   error?: ApiError;
 };
 
+export type BackendApiResult<T> = {
+  ok: boolean;
+  status: number;
+  data: T | null;
+  error: ApiError | null;
+};
+
+export function apiErrorMessage(
+  label: string,
+  result: Pick<BackendApiResult<unknown>, "ok" | "status" | "error"> | null | undefined,
+) {
+  if (!result || result.ok) return null;
+  return `${label}: ${result.error?.message ?? `Request failed with status ${result.status}`}`;
+}
+
 export async function backendApi<T>(
   path: string,
   options?: {
@@ -21,7 +36,7 @@ export async function backendApi<T>(
     accessToken?: string;
     body?: unknown;
   },
-): Promise<{ ok: boolean; status: number; data: T | null; error: ApiError | null }> {
+): Promise<BackendApiResult<T>> {
   try {
     const res = await fetch(`${BACKEND_API_BASE}${path}`, {
       method: options?.method ?? "GET",
@@ -72,7 +87,7 @@ export async function backendMultipartApiWithSession<T>(
   session: SessionData,
   formData: FormData,
   method: "POST" | "PATCH" | "PUT" = "POST",
-): Promise<{ ok: boolean; status: number; data: T | null; error: ApiError | null }> {
+): Promise<BackendApiResult<T>> {
   try {
     const res = await fetch(`${BACKEND_API_BASE}${path}`, {
       method,

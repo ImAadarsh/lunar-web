@@ -1,7 +1,10 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { backendApiWithSession } from "@/lib/backend";
+import { CheckpointPlaceFields } from "@/components/checkpoints/checkpoint-place-fields";
+import { ApiErrorNotice } from "@/components/portal/api-error-notice";
+import { PortalModal } from "@/components/portal/portal-modal";
+import { apiErrorMessage, backendApiWithSession } from "@/lib/backend";
 import { mutateBackend } from "@/lib/portal-mutations";
 import { getSessionFromCookies } from "@/lib/server-session";
 import { CheckpointQrClient } from "@/components/checkpoints/checkpoint-qr-client";
@@ -28,6 +31,10 @@ export default async function AdminCheckpointsPage({ searchParams }: Checkpoints
     ? await backendApiWithSession<CheckpointResponse>(`/sites/${siteId}/checkpoints`, session)
     : null;
   const checkpoints = checkpointsRes?.data?.items ?? [];
+  const loadErrors = [
+    apiErrorMessage("Sites", sitesRes),
+    apiErrorMessage("Checkpoints", checkpointsRes),
+  ];
 
   async function createCheckpointAction(formData: FormData) {
     "use server";
@@ -76,6 +83,9 @@ export default async function AdminCheckpointsPage({ searchParams }: Checkpoints
       <section className="rounded-2xl bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-900">Checkpoint management</h2>
         <p className="text-sm text-slate-500">Select a site to manage patrol QR checkpoints.</p>
+        <div className="mt-3">
+          <ApiErrorNotice errors={loadErrors} />
+        </div>
         <div className="mt-3 flex flex-wrap gap-2">
           {sites.map((site) => (
             <Link
@@ -90,57 +100,44 @@ export default async function AdminCheckpointsPage({ searchParams }: Checkpoints
       </section>
 
       {siteId ? (
-        <div className="grid gap-4 xl:grid-cols-[420px_1fr]">
+        <div className="grid gap-4 2xl:grid-cols-[420px_1fr]">
           <section className="rounded-2xl bg-white p-5 shadow-sm">
             <h3 className="text-base font-semibold text-slate-900">Add checkpoint</h3>
-            <form action={createCheckpointAction} className="mt-3 space-y-3">
-              <input type="hidden" name="siteId" value={String(siteId)} />
-              <input
-                name="label"
-                required
-                placeholder="Checkpoint label"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-              />
-              <input
-                name="qrCode"
-                placeholder="Optional QR payload (default: auto = checkpoint ID)"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-              />
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  name="lat"
-                  type="number"
-                  step="any"
-                  required
-                  placeholder="Latitude"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-                />
-                <input
-                  name="lng"
-                  type="number"
-                  step="any"
-                  required
-                  placeholder="Longitude"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-                />
-              </div>
-              <input
-                name="sortOrder"
-                type="number"
-                placeholder="Sort order (default 0)"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-              />
-              <button className="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800">
-                Add Checkpoint
-              </button>
-            </form>
+            <p className="mt-1 text-sm text-slate-500">Create QR scan points for the selected site.</p>
+            <div className="mt-3">
+              <PortalModal
+                triggerLabel="Add Checkpoint"
+                title="Add checkpoint"
+                description="Set the QR payload and coordinates for this patrol point."
+                triggerClassName="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800"
+              >
+                <form action={createCheckpointAction} className="space-y-3">
+                  <input type="hidden" name="siteId" value={String(siteId)} />
+                  <CheckpointPlaceFields />
+                  <input
+                    name="qrCode"
+                    placeholder="Optional QR payload (default: auto = checkpoint ID)"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+                  />
+                  <input
+                    name="sortOrder"
+                    type="number"
+                    placeholder="Sort order (default 0)"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+                  />
+                  <button className="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800">
+                    Save Checkpoint
+                  </button>
+                </form>
+              </PortalModal>
+            </div>
           </section>
 
           <section className="rounded-2xl bg-white p-5 shadow-sm">
             <h3 className="text-base font-semibold text-slate-900">Checkpoints</h3>
-            <div className="mt-3 overflow-x-auto">
+            <div className="mt-3 overflow-x-auto rounded-xl border border-slate-100">
               <table className="w-full text-left text-sm">
-                <thead className="text-slate-500">
+                <thead className="bg-slate-50 text-slate-500">
                   <tr>
                     <th className="pb-2">Label</th>
                     <th className="pb-2">QR</th>
@@ -151,7 +148,7 @@ export default async function AdminCheckpointsPage({ searchParams }: Checkpoints
                 </thead>
                 <tbody>
                   {checkpoints.map((cp) => (
-                    <tr key={cp.id} className="border-t border-slate-100">
+                    <tr key={cp.id} className="border-t border-slate-100 align-top hover:bg-slate-50/70">
                       <td className="py-2.5">
                         <input
                           form={`cp-update-${cp.id}`}

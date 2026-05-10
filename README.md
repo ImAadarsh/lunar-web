@@ -28,9 +28,7 @@ Role-based web dashboard for Lunar Security operations, connected to the existin
 - Command center map page (`/manager/command-center`) for Admin/Manager roles
 - Attachment gallery modal with metadata + confirm-delete actions
 - Command center filter set (site/status/time window) with optional auto-refresh (off/10s/30s)
-- Branding route that serves logo assets from repository root:
-  - `/api/assets/logo?variant=transparent`
-  - `/api/assets/logo?variant=white`
+- Branding route serves the transparent repository logo from `logo-without-bg.png`.
 
 ## Setup
 

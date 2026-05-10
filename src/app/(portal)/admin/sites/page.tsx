@@ -1,7 +1,11 @@
 import { revalidatePath } from "next/cache";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { backendApiWithSession } from "@/lib/backend";
+import { ApiErrorNotice } from "@/components/portal/api-error-notice";
+import { PortalModal } from "@/components/portal/portal-modal";
+import { SubmitButton } from "@/components/portal/submit-button";
+import { SitePlaceFields } from "@/components/sites/site-place-fields";
+import { apiErrorMessage, backendApiWithSession } from "@/lib/backend";
 import { mutateBackend } from "@/lib/portal-mutations";
 import { getSessionFromCookies } from "@/lib/server-session";
 
@@ -13,12 +17,13 @@ type SitesResponse = {
     centerLat: number;
     centerLng: number;
     geofenceRadiusM?: number;
+    geofencePolygon?: unknown;
     isActive: number | boolean;
   }>;
 };
 
 type AdminSitesPageProps = {
-  searchParams: Promise<{ q?: string; page?: string }>;
+  searchParams: Promise<{ q?: string; page?: string; success?: string; error?: string }>;
 };
 
 export default async function AdminSitesPage({ searchParams }: AdminSitesPageProps) {
@@ -28,9 +33,12 @@ export default async function AdminSitesPage({ searchParams }: AdminSitesPagePro
 
   const sitesRes = await backendApiWithSession<SitesResponse>("/sites", session);
   const allSites = sitesRes.data?.items ?? [];
+  const loadErrors = [apiErrorMessage("Sites", sitesRes)];
   const params = await searchParams;
   const PAGE_SIZE = 12;
   const query = (params.q ?? "").trim().toLowerCase();
+  const actionSuccess = (params.success ?? "").trim();
+  const actionError = (params.error ?? "").trim();
   const page = Math.max(1, Number(params.page ?? "1") || 1);
   const filtered = query
     ? allSites.filter((site) =>
@@ -51,24 +59,46 @@ export default async function AdminSitesPage({ searchParams }: AdminSitesPagePro
     const centerLat = Number(formData.get("centerLat"));
     const centerLng = Number(formData.get("centerLng"));
     const geofenceRadiusM = Number(formData.get("geofenceRadiusM"));
-    if (!name || Number.isNaN(centerLat) || Number.isNaN(centerLng)) return;
-    await mutateBackend("/sites", "POST", {
-      name,
-      address: address || undefined,
-      centerLat,
-      centerLng,
-      geofenceRadiusM: Number.isNaN(geofenceRadiusM) ? undefined : geofenceRadiusM,
-      isActive: true,
-    });
+    const geofencePolygonRaw = String(formData.get("geofencePolygon") ?? "").trim();
+    let geofencePolygon: unknown = undefined;
+    if (geofencePolygonRaw) {
+      try {
+        geofencePolygon = JSON.parse(geofencePolygonRaw);
+      } catch {
+        redirect("/admin/sites?error=Invalid%20polygon%20JSON");
+      }
+    }
+    if (!name || Number.isNaN(centerLat) || Number.isNaN(centerLng)) {
+      redirect("/admin/sites?error=Site%20name%20and%20valid%20coordinates%20are%20required");
+    }
+    try {
+      await mutateBackend("/sites", "POST", {
+        name,
+        address: address || undefined,
+        centerLat,
+        centerLng,
+        geofenceRadiusM: Number.isNaN(geofenceRadiusM) ? undefined : geofenceRadiusM,
+        geofencePolygon,
+        isActive: true,
+      });
+    } catch (e) {
+      redirect(`/admin/sites?error=${encodeURIComponent(e instanceof Error ? e.message : "Unable to create site")}`);
+    }
     revalidatePath("/admin/sites");
+    redirect(`/admin/sites?success=${encodeURIComponent(`Site "${name}" created successfully`)}`);
   }
 
   async function deactivateSiteAction(formData: FormData) {
     "use server";
     const id = Number(formData.get("id"));
-    if (!id) return;
-    await mutateBackend(`/sites/${id}`, "DELETE");
+    if (!id) redirect("/admin/sites?error=Missing%20site%20id");
+    try {
+      await mutateBackend(`/sites/${id}`, "DELETE");
+    } catch (e) {
+      redirect(`/admin/sites?error=${encodeURIComponent(e instanceof Error ? e.message : "Unable to deactivate site")}`);
+    }
     revalidatePath("/admin/sites");
+    redirect("/admin/sites?success=Site%20deactivated");
   }
 
   async function updateSiteAction(formData: FormData) {
@@ -79,69 +109,94 @@ export default async function AdminSitesPage({ searchParams }: AdminSitesPagePro
     const centerLat = Number(formData.get("centerLat"));
     const centerLng = Number(formData.get("centerLng"));
     const geofenceRadiusM = Number(formData.get("geofenceRadiusM"));
+    const geofencePolygonRaw = String(formData.get("geofencePolygon") ?? "").trim();
+    let geofencePolygon: unknown = undefined;
+    if (geofencePolygonRaw) {
+      try {
+        geofencePolygon = JSON.parse(geofencePolygonRaw);
+      } catch {
+        redirect("/admin/sites?error=Invalid%20polygon%20JSON");
+      }
+    }
     const isActive = String(formData.get("isActive") ?? "true") === "true";
-    if (!id || !name || Number.isNaN(centerLat) || Number.isNaN(centerLng)) return;
-    await mutateBackend(`/sites/${id}`, "PATCH", {
-      name,
-      address: address || undefined,
-      centerLat,
-      centerLng,
-      geofenceRadiusM: Number.isNaN(geofenceRadiusM) ? null : geofenceRadiusM,
-      isActive,
-    });
+    if (!id || !name || Number.isNaN(centerLat) || Number.isNaN(centerLng)) {
+      redirect("/admin/sites?error=Site%20name%20and%20valid%20coordinates%20are%20required");
+    }
+    try {
+      await mutateBackend(`/sites/${id}`, "PATCH", {
+        name,
+        address: address || undefined,
+        centerLat,
+        centerLng,
+        geofenceRadiusM: Number.isNaN(geofenceRadiusM) ? null : geofenceRadiusM,
+        geofencePolygon,
+        isActive,
+      });
+    } catch (e) {
+      redirect(`/admin/sites?error=${encodeURIComponent(e instanceof Error ? e.message : "Unable to update site")}`);
+    }
     revalidatePath("/admin/sites");
+    redirect(`/admin/sites?success=${encodeURIComponent(`Site "${name}" updated`)}`);
   }
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[420px_1fr]">
+    <div className="grid gap-4 2xl:grid-cols-[420px_1fr]">
+      {actionSuccess || actionError ? (
+        <div className="2xl:col-span-2">
+          {actionSuccess ? (
+            <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+              {actionSuccess}
+            </p>
+          ) : null}
+          {actionError ? (
+            <p className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+              {actionError}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       <section className="rounded-2xl bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-900">Create site</h2>
-        <p className="text-sm text-slate-500">Adds a new patrol site and geofence center.</p>
-        <form action={createSiteAction} className="mt-4 space-y-3">
-          <input
-            name="name"
-            required
-            placeholder="Site name"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-          />
-          <input
-            name="address"
-            placeholder="Address"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-          />
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              name="centerLat"
-              type="number"
-              step="any"
-              required
-              placeholder="Latitude"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-            />
-            <input
-              name="centerLng"
-              type="number"
-              step="any"
-              required
-              placeholder="Longitude"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-            />
-          </div>
-          <input
-            name="geofenceRadiusM"
-            type="number"
-            min="1"
-            placeholder="Geofence radius (m)"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-          />
-          <button className="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800">
-            Create Site
-          </button>
-        </form>
+        <p className="mt-1 text-sm text-slate-500">
+          Add patrol sites with Google address search, coordinates, and geofence data.
+        </p>
+        <div className="mt-4 rounded-xl border border-lunar-100 bg-lunar-50 p-4 text-sm text-lunar-900">
+          Start from a Google place/address to fill the site name, address, latitude, and longitude automatically.
+        </div>
+        <div className="mt-4">
+          <PortalModal
+            triggerLabel="Create Site"
+            title="Create site"
+            description="Search for a real address, verify coordinates, then save the patrol geofence."
+            triggerClassName="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800"
+          >
+            <form action={createSiteAction} className="space-y-3">
+              <SitePlaceFields />
+              <input
+                name="geofenceRadiusM"
+                type="number"
+                min="1"
+                placeholder="Geofence radius (m)"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+              />
+              <textarea
+                name="geofencePolygon"
+                placeholder='Optional polygon JSON, e.g. [{"lat":51.5,"lng":-0.1}]'
+                className="min-h-24 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+              />
+              <SubmitButton pendingLabel="Creating site...">
+                Save Site
+              </SubmitButton>
+            </form>
+          </PortalModal>
+        </div>
       </section>
 
       <section className="rounded-2xl bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-900">Sites</h2>
+        <div className="mt-3">
+          <ApiErrorNotice errors={loadErrors} />
+        </div>
         <form className="mt-3">
           <input
             name="q"
@@ -150,9 +205,9 @@ export default async function AdminSitesPage({ searchParams }: AdminSitesPagePro
             className="w-full max-w-md rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
           />
         </form>
-        <div className="mt-4 overflow-x-auto">
+        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-100">
           <table className="w-full text-left text-sm">
-            <thead className="text-slate-500">
+            <thead className="bg-slate-50 text-slate-500">
               <tr>
                 <th className="pb-2">Name</th>
                 <th className="pb-2">Location</th>
@@ -163,7 +218,7 @@ export default async function AdminSitesPage({ searchParams }: AdminSitesPagePro
             </thead>
             <tbody>
               {sites.map((site) => (
-                <tr key={site.id} className="border-t border-slate-100">
+                <tr key={site.id} className="border-t border-slate-100 align-top hover:bg-slate-50/70">
                   <td className="py-2.5">
                     <input
                       form={`site-update-${site.id}`}
@@ -171,11 +226,21 @@ export default async function AdminSitesPage({ searchParams }: AdminSitesPagePro
                       defaultValue={site.name}
                       className="w-40 rounded-md border border-slate-300 px-2 py-1 text-xs"
                     />
+                    <Link href={`/admin/sites/${site.id}`} className="mt-1 block text-xs font-semibold text-lunar-700 hover:underline">
+                      Assets, checkpoints, QR sheet
+                    </Link>
                     <input
                       form={`site-update-${site.id}`}
                       name="address"
                       defaultValue={site.address ?? ""}
                       className="mt-1 w-40 rounded-md border border-slate-300 px-2 py-1 text-xs"
+                    />
+                  </td>
+                  <td className="hidden">
+                    <textarea
+                      form={`site-update-${site.id}`}
+                      name="geofencePolygon"
+                      defaultValue={site.geofencePolygon ? JSON.stringify(site.geofencePolygon) : ""}
                     />
                   </td>
                   <td className="py-2.5 text-slate-700">

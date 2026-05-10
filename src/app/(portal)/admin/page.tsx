@@ -1,4 +1,5 @@
-import { backendApiWithSession } from "@/lib/backend";
+import { ApiErrorNotice } from "@/components/portal/api-error-notice";
+import { apiErrorMessage, backendApiWithSession } from "@/lib/backend";
 import { getSessionFromCookies } from "@/lib/server-session";
 import { redirect } from "next/navigation";
 
@@ -32,9 +33,15 @@ export default async function AdminPage() {
   const kpi = kpiRes.data;
   const users = usersRes.data?.items ?? [];
   const audits = auditRes.data?.items ?? [];
+  const loadErrors = [
+    apiErrorMessage("Dashboard KPIs", kpiRes),
+    apiErrorMessage("Recent users", usersRes),
+    apiErrorMessage("Audit events", auditRes),
+  ];
 
   return (
     <div className="space-y-4">
+      <ApiErrorNotice errors={loadErrors} />
       <section className="grid gap-3 md:grid-cols-4">
         <Stat title="On-duty guards" value={kpi?.onDutyGuards ?? "-"} />
         <Stat title="Open incidents" value={kpi?.openIncidents ?? "-"} />

@@ -116,7 +116,7 @@ export function AttachmentGallery({
                 Close
               </button>
             </div>
-            <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+            <div className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
               <div className="overflow-hidden rounded-xl bg-slate-50 p-2">
                 {selected.publicUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element

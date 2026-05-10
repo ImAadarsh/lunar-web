@@ -12,3 +12,64 @@ body {
   background: #f1f5f9;
   color: #0f172a;
 }
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+input,
+select,
+textarea,
+button {
+  max-width: 100%;
+}
+
+.overflow-x-auto {
+  min-width: 0;
+  -webkit-overflow-scrolling: touch;
+}
+
+.overflow-x-auto > table {
+  min-width: max-content;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.overflow-x-auto > table th,
+.overflow-x-auto > table td {
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+}
+
+.overflow-x-auto > table th:first-child,
+.overflow-x-auto > table td:first-child {
+  padding-left: 1rem;
+}
+
+.overflow-x-auto > table th:last-child,
+.overflow-x-auto > table td:last-child {
+  padding-right: 1rem;
+}
+
+.overflow-x-auto > table thead th {
+  white-space: nowrap;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.overflow-x-auto > table tbody tr {
+  transition: background-color 150ms ease;
+}
+
+@media (max-width: 640px) {
+  .overflow-x-auto > table {
+    min-width: 44rem;
+  }
+}

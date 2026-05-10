@@ -1,7 +1,9 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { backendApiWithSession } from "@/lib/backend";
+import { ApiErrorNotice } from "@/components/portal/api-error-notice";
+import { PortalModal } from "@/components/portal/portal-modal";
+import { apiErrorMessage, backendApiWithSession } from "@/lib/backend";
 import { mutateBackend } from "@/lib/portal-mutations";
 import { getSessionFromCookies } from "@/lib/server-session";
 
@@ -26,7 +28,18 @@ type PayrollDetails = {
     hoursWorked: number;
     grossPence: number;
     netPence: number;
-    metaJson?: { baseGrossPence?: number; adjustmentPence?: number } | null;
+    metaJson?: {
+      baseGrossPence?: number;
+      adjustmentPence?: number;
+      overtimeHours?: number;
+      overtimePence?: number;
+      nightDifferentialPence?: number;
+      weekendDifferentialPence?: number;
+      pensionEmployeePence?: number;
+      pensionEmployerPence?: number;
+      payePence?: number;
+      niEmployeePence?: number;
+    } | null;
   }>;
 };
 type Payslips = {
@@ -41,6 +54,9 @@ type Payslips = {
       netPence?: number;
       adjustmentPence?: number;
     };
+    filePath?: string | null;
+    sentAt?: string | null;
+    readAt?: string | null;
   }>;
 };
 type UsersResponse = { items: Array<{ id: number; email: string; role: string }> };
@@ -66,6 +82,12 @@ export default async function AdminPayrollPage({ searchParams }: PayrollPageProp
   const details = detailsRes?.data ?? null;
   const payslips = payslipsRes?.data?.items ?? [];
   const users = usersRes.data?.items ?? [];
+  const loadErrors = [
+    apiErrorMessage("Payroll runs", runsRes),
+    apiErrorMessage("Payroll run details", detailsRes),
+    apiErrorMessage("Payslips", payslipsRes),
+    apiErrorMessage("Guard users", usersRes),
+  ];
 
   async function createRunAction(formData: FormData) {
     "use server";
@@ -102,28 +124,49 @@ export default async function AdminPayrollPage({ searchParams }: PayrollPageProp
     revalidatePath("/admin/payroll");
   }
 
+  async function sendPayslipAction(formData: FormData) {
+    "use server";
+    const payslipId = Number(formData.get("payslipId"));
+    if (!payslipId) return;
+    await mutateBackend(`/payroll/payslips/${payslipId}/send`, "POST", {});
+    revalidatePath("/admin/payroll");
+  }
+
   return (
-    <div className="grid gap-4 xl:grid-cols-[420px_1fr]">
+    <div className="grid gap-4 2xl:grid-cols-[420px_1fr]">
+      <div className="2xl:col-span-2">
+        <ApiErrorNotice errors={loadErrors} />
+      </div>
       <section className="space-y-4">
         <article className="rounded-2xl bg-white p-5 shadow-sm">
           <h2 className="text-lg font-semibold text-slate-900">Create payroll run</h2>
-          <form action={createRunAction} className="mt-3 space-y-3">
-            <input
-              name="periodStart"
-              type="date"
-              required
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-            />
-            <input
-              name="periodEnd"
-              type="date"
-              required
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-            />
-            <button className="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800">
-              Create Run
-            </button>
-          </form>
+          <p className="mt-1 text-sm text-slate-500">Start a new pay period and process attendance lines.</p>
+          <div className="mt-3">
+            <PortalModal
+              triggerLabel="Create Run"
+              title="Create payroll run"
+              description="Select the pay period to prepare payroll calculations."
+              triggerClassName="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800"
+            >
+              <form action={createRunAction} className="space-y-3">
+                <input
+                  name="periodStart"
+                  type="date"
+                  required
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+                />
+                <input
+                  name="periodEnd"
+                  type="date"
+                  required
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+                />
+                <button className="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800">
+                  Save Payroll Run
+                </button>
+              </form>
+            </PortalModal>
+          </div>
         </article>
 
         <article className="rounded-2xl bg-white p-5 shadow-sm">
@@ -146,28 +189,37 @@ export default async function AdminPayrollPage({ searchParams }: PayrollPageProp
           <article className="rounded-2xl bg-white p-5 shadow-sm">
             <h3 className="text-base font-semibold text-slate-900">Pre-processing adjustment</h3>
             <p className="text-sm text-slate-500">Use positive pence for additions and negative pence for deductions.</p>
-            <form action={addAdjustmentAction} className="mt-3 space-y-3">
-              <input type="hidden" name="runId" value={String(details.id)} />
-              <select name="userId" required className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-                <option value="">Select guard</option>
-                {users.map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {user.email}
-                  </option>
-                ))}
-              </select>
-              <select name="kind" defaultValue="correction" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-                <option value="bonus">bonus</option>
-                <option value="deduction">deduction</option>
-                <option value="correction">correction</option>
-                <option value="other">other</option>
-              </select>
-              <input name="amountPence" type="number" required placeholder="Amount in pence, e.g. 2500 or -1000" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-              <input name="reason" placeholder="Reason" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-              <button className="w-full rounded-lg border border-lunar-200 px-4 py-2 text-sm font-semibold text-lunar-700 hover:bg-lunar-50">
-                Add Adjustment
-              </button>
-            </form>
+            <div className="mt-3">
+              <PortalModal
+                triggerLabel="Add Adjustment"
+                title="Pre-processing adjustment"
+                description="Use positive pence for additions and negative pence for deductions."
+                triggerClassName="w-full rounded-lg border border-lunar-200 px-4 py-2 text-sm font-semibold text-lunar-700 hover:bg-lunar-50"
+              >
+                <form action={addAdjustmentAction} className="space-y-3">
+                  <input type="hidden" name="runId" value={String(details.id)} />
+                  <select name="userId" required className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                    <option value="">Select guard</option>
+                    {users.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.email}
+                      </option>
+                    ))}
+                  </select>
+                  <select name="kind" defaultValue="correction" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                    <option value="bonus">bonus</option>
+                    <option value="deduction">deduction</option>
+                    <option value="correction">correction</option>
+                    <option value="other">other</option>
+                  </select>
+                  <input name="amountPence" type="number" required placeholder="Amount in pence, e.g. 2500 or -1000" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                  <input name="reason" placeholder="Reason" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                  <button className="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800">
+                    Save Adjustment
+                  </button>
+                </form>
+              </PortalModal>
+            </div>
           </article>
         ) : null}
       </section>
@@ -210,6 +262,9 @@ export default async function AdminPayrollPage({ searchParams }: PayrollPageProp
                     <th className="pb-2">Hours</th>
                     <th className="pb-2">Adjustments</th>
                     <th className="pb-2">Gross</th>
+                    <th className="pb-2">OT/Diff</th>
+                    <th className="pb-2">PAYE/NI</th>
+                    <th className="pb-2">Pension</th>
                     <th className="pb-2">Net</th>
                   </tr>
                 </thead>
@@ -220,6 +275,15 @@ export default async function AdminPayrollPage({ searchParams }: PayrollPageProp
                       <td className="py-2.5">{line.hoursWorked}</td>
                       <td className="py-2.5">£{((line.metaJson?.adjustmentPence ?? 0) / 100).toFixed(2)}</td>
                       <td className="py-2.5">£{(line.grossPence / 100).toFixed(2)}</td>
+                      <td className="py-2.5 text-xs text-slate-600">
+                        OT {line.metaJson?.overtimeHours ?? 0}h / £{(((line.metaJson?.overtimePence ?? 0) + (line.metaJson?.nightDifferentialPence ?? 0) + (line.metaJson?.weekendDifferentialPence ?? 0)) / 100).toFixed(2)}
+                      </td>
+                      <td className="py-2.5 text-xs text-slate-600">
+                        £{(((line.metaJson?.payePence ?? 0) + (line.metaJson?.niEmployeePence ?? 0)) / 100).toFixed(2)}
+                      </td>
+                      <td className="py-2.5 text-xs text-slate-600">
+                        £{((line.metaJson?.pensionEmployeePence ?? 0) / 100).toFixed(2)}
+                      </td>
                       <td className="py-2.5">£{(line.netPence / 100).toFixed(2)}</td>
                     </tr>
                   ))}
@@ -243,6 +307,8 @@ export default async function AdminPayrollPage({ searchParams }: PayrollPageProp
                     <th className="pb-2">Status</th>
                     <th className="pb-2">Issued</th>
                     <th className="pb-2">Net</th>
+                    <th className="pb-2">Lifecycle</th>
+                    <th className="pb-2 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -252,6 +318,25 @@ export default async function AdminPayrollPage({ searchParams }: PayrollPageProp
                       <td className="py-2.5">{payslip.status}</td>
                       <td className="py-2.5">{payslip.issuedAt ? new Date(payslip.issuedAt).toLocaleString() : "-"}</td>
                       <td className="py-2.5">£{((payslip.payload.netPence ?? 0) / 100).toFixed(2)}</td>
+                      <td className="py-2.5 text-xs text-slate-600">
+                        sent {payslip.sentAt ? new Date(payslip.sentAt).toLocaleDateString() : "-"} / read {payslip.readAt ? new Date(payslip.readAt).toLocaleDateString() : "-"}
+                      </td>
+                      <td className="py-2.5 text-right">
+                        <div className="flex justify-end gap-2">
+                          <a
+                            href={`/api/portal/payslips/${payslip.id}/file`}
+                            className="rounded-md border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                          >
+                            Download
+                          </a>
+                          <form action={sendPayslipAction}>
+                            <input type="hidden" name="payslipId" value={String(payslip.id)} />
+                            <button className="rounded-md bg-lunar-700 px-3 py-1 text-xs font-semibold text-white hover:bg-lunar-800">
+                              Send
+                            </button>
+                          </form>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

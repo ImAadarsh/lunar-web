@@ -1,6 +1,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { backendApiWithSession } from "@/lib/backend";
+import { ApiErrorNotice } from "@/components/portal/api-error-notice";
+import { PortalModal } from "@/components/portal/portal-modal";
+import { apiErrorMessage, backendApiWithSession } from "@/lib/backend";
 import { mutateBackend } from "@/lib/portal-mutations";
 import { getSessionFromCookies } from "@/lib/server-session";
 
@@ -23,6 +25,7 @@ export default async function StaffLeavePage() {
 
   const leaveRes = await backendApiWithSession<LeaveList>("/leave-requests?limit=100", session);
   const requests = leaveRes.data?.items ?? [];
+  const loadErrors = [apiErrorMessage("Leave requests", leaveRes)];
 
   async function createLeaveAction(formData: FormData) {
     "use server";
@@ -49,44 +52,57 @@ export default async function StaffLeavePage() {
   }
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[420px_1fr]">
+    <div className="grid gap-4 2xl:grid-cols-[420px_1fr]">
+      <div className="2xl:col-span-2">
+        <ApiErrorNotice errors={loadErrors} />
+      </div>
       <section className="rounded-2xl bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-900">Submit leave request</h2>
-        <form action={createLeaveAction} className="mt-3 space-y-3">
-          <select
-            name="leaveType"
-            defaultValue="annual"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+        <p className="mt-1 text-sm text-slate-500">Request time off and track approval status.</p>
+        <div className="mt-3">
+          <PortalModal
+            triggerLabel="Submit Request"
+            title="Submit leave request"
+            description="Choose dates and provide an optional reason for your manager."
+            triggerClassName="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800"
           >
-            <option value="annual">Annual</option>
-            <option value="sick">Sick</option>
-            <option value="unpaid">Unpaid</option>
-            <option value="other">Other</option>
-          </select>
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              name="startDate"
-              type="date"
-              required
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-            />
-            <input
-              name="endDate"
-              type="date"
-              required
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-            />
-          </div>
-          <textarea
-            name="reason"
-            rows={4}
-            placeholder="Reason (optional)"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-          />
-          <button className="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800">
-            Submit Request
-          </button>
-        </form>
+            <form action={createLeaveAction} className="space-y-3">
+              <select
+                name="leaveType"
+                defaultValue="annual"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+              >
+                <option value="annual">Annual</option>
+                <option value="sick">Sick</option>
+                <option value="unpaid">Unpaid</option>
+                <option value="other">Other</option>
+              </select>
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  name="startDate"
+                  type="date"
+                  required
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+                />
+                <input
+                  name="endDate"
+                  type="date"
+                  required
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+                />
+              </div>
+              <textarea
+                name="reason"
+                rows={4}
+                placeholder="Reason (optional)"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+              />
+              <button className="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800">
+                Send Request
+              </button>
+            </form>
+          </PortalModal>
+        </div>
       </section>
 
       <section className="rounded-2xl bg-white p-5 shadow-sm">

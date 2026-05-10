@@ -13,7 +13,20 @@ export async function mutateBackend(path: string, method: "POST" | "PATCH" | "PU
   const session = await requirePortalSession();
   const res = await backendApiWithSession(path, session, { method, body });
   if (!res.ok) {
-    throw new Error(res.error?.message ?? "Request failed");
+    const details = res.error?.details;
+    const fieldErrors =
+      details &&
+      typeof details === "object" &&
+      "fieldErrors" in details &&
+      details.fieldErrors &&
+      typeof details.fieldErrors === "object"
+        ? Object.entries(details.fieldErrors as Record<string, unknown>)
+            .flatMap(([field, messages]) =>
+              Array.isArray(messages) ? messages.map((message) => `${field}: ${message}`) : []
+            )
+            .join("; ")
+        : "";
+    throw new Error(fieldErrors || res.error?.message || "Request failed");
   }
   return res.data;
 }

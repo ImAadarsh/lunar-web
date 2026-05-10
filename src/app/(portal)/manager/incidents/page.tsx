@@ -1,7 +1,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { backendApiWithSession } from "@/lib/backend";
+import { ApiErrorNotice } from "@/components/portal/api-error-notice";
+import { apiErrorMessage, backendApiWithSession } from "@/lib/backend";
 import { mutateBackend } from "@/lib/portal-mutations";
 import { getSessionFromCookies } from "@/lib/server-session";
 
@@ -55,6 +56,11 @@ export default async function ManagerIncidentsPage({ searchParams }: ManagerInci
   ]);
   const allIncidents = incidentsRes.data?.items ?? [];
   const sites = sitesRes.data?.items ?? [];
+  const loadErrors = [
+    apiErrorMessage("Incidents", incidentsRes),
+    apiErrorMessage("SOS events", sosRes),
+    apiErrorMessage("Sites", sitesRes),
+  ];
   const query = (params.q ?? "").trim().toLowerCase();
   const filteredBySite = siteIdFilter
     ? allIncidents.filter((incident) => incident.siteId === siteIdFilter)
@@ -93,7 +99,10 @@ export default async function ManagerIncidentsPage({ searchParams }: ManagerInci
   }
 
   return (
-    <div className="grid gap-4 xl:grid-cols-2">
+    <div className="grid gap-4 2xl:grid-cols-2">
+      <div className="2xl:col-span-2">
+        <ApiErrorNotice errors={loadErrors} />
+      </div>
       <section className="rounded-2xl bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-900">Incidents</h2>
         <form className="mt-3 grid gap-2 sm:grid-cols-4">

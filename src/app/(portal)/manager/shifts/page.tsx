@@ -1,7 +1,9 @@
 import { revalidatePath } from "next/cache";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { backendApiWithSession } from "@/lib/backend";
+import { ApiErrorNotice } from "@/components/portal/api-error-notice";
+import { PortalModal } from "@/components/portal/portal-modal";
+import { apiErrorMessage, backendApiWithSession } from "@/lib/backend";
 import { mutateBackend } from "@/lib/portal-mutations";
 import { getSessionFromCookies } from "@/lib/server-session";
 
@@ -31,6 +33,17 @@ type ShiftSwapsResponse = {
     createdAt: string;
   }>;
 };
+type AvailabilityResponse = {
+  items: Array<{
+    id: number;
+    userId: number;
+    email: string;
+    startsAt: string;
+    endsAt: string;
+    status: string;
+    reason?: string | null;
+  }>;
+};
 type ManagerShiftsPageProps = {
   searchParams: Promise<{ q?: string; page?: string }>;
 };
@@ -46,17 +59,26 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
   if (!session) redirect("/login");
   if (!["admin", "supervisor"].includes(session.user.role)) redirect("/forbidden");
 
-  const [shiftsRes, sitesRes, usersRes, swapsRes] = await Promise.all([
+  const [shiftsRes, sitesRes, usersRes, swapsRes, availabilityRes] = await Promise.all([
     backendApiWithSession<ShiftsResponse>("/shifts", session),
     backendApiWithSession<SitesResponse>("/sites", session),
     backendApiWithSession<UsersResponse>("/users?role=guard&limit=200", session),
     backendApiWithSession<ShiftSwapsResponse>("/shift-swaps?status=pending", session),
+    backendApiWithSession<AvailabilityResponse>("/availability", session),
   ]);
 
   const shifts = shiftsRes.data?.items ?? [];
   const sites = sitesRes.data?.items ?? [];
   const users = usersRes.data?.items ?? [];
   const swaps = swapsRes.data?.items ?? [];
+  const availability = availabilityRes.data?.items ?? [];
+  const loadErrors = [
+    apiErrorMessage("Shifts", shiftsRes),
+    apiErrorMessage("Sites", sitesRes),
+    apiErrorMessage("Guard users", usersRes),
+    apiErrorMessage("Shift swaps", swapsRes),
+    apiErrorMessage("Availability", availabilityRes),
+  ];
   const params = await searchParams;
   const query = (params.q ?? "").trim().toLowerCase();
   const PAGE_SIZE = 12;
@@ -115,9 +137,37 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
     revalidatePath("/manager/shifts");
   }
 
+  async function createAvailabilityAction(formData: FormData) {
+    "use server";
+    const userId = Number(formData.get("userId"));
+    const startsAt = String(formData.get("startsAt") ?? "");
+    const endsAt = String(formData.get("endsAt") ?? "");
+    const status = String(formData.get("status") ?? "unavailable");
+    const reason = String(formData.get("reason") ?? "").trim();
+    if (!userId || !startsAt || !endsAt) return;
+    await mutateBackend("/availability", "POST", {
+      userId,
+      startsAt: new Date(startsAt).toISOString(),
+      endsAt: new Date(endsAt).toISOString(),
+      status,
+      reason: reason || undefined,
+    });
+    revalidatePath("/manager/shifts");
+  }
+
+  function shiftHasAvailabilityConflict(shift: ShiftsResponse["items"][number]) {
+    return availability.some((a) => {
+      if (a.userId !== shift.userId || a.status !== "unavailable") return false;
+      return new Date(a.startsAt) < new Date(shift.endsAt) && new Date(a.endsAt) > new Date(shift.startsAt);
+    });
+  }
+
   return (
-    <div className="grid gap-4 xl:grid-cols-[460px_1fr]">
-      <section className="rounded-2xl bg-white p-5 shadow-sm xl:col-span-2">
+    <div className="grid gap-4 2xl:grid-cols-[460px_1fr]">
+      <div className="2xl:col-span-2">
+        <ApiErrorNotice errors={loadErrors} />
+      </div>
+      <section className="rounded-2xl bg-white p-5 shadow-sm 2xl:col-span-2">
         <h2 className="text-lg font-semibold text-slate-900">Pending shift swaps</h2>
         <p className="text-sm text-slate-500">Approving a targeted swap reassigns the shift after backend conflict checks.</p>
         {swaps.length === 0 ? (
@@ -168,58 +218,122 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
           </div>
         )}
       </section>
+      <section className="rounded-2xl bg-white p-5 shadow-sm 2xl:col-span-2">
+        <div className="grid gap-4 xl:grid-cols-[360px_1fr]">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Availability calendar</h2>
+            <p className="text-sm text-slate-500">Add unavailable or preferred windows. Conflicting shifts are highlighted in the schedule.</p>
+            <div className="mt-3">
+              <PortalModal
+                triggerLabel="Add Availability"
+                title="Add availability window"
+                description="Record unavailable, preferred, or available windows for a guard."
+                triggerClassName="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800"
+              >
+                <form action={createAvailabilityAction} className="grid gap-2">
+                  <select name="userId" required defaultValue="" className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                    <option value="" disabled>Select guard</option>
+                    {users.map((user) => (
+                      <option key={user.id} value={user.id}>{user.email}</option>
+                    ))}
+                  </select>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input name="startsAt" type="datetime-local" required className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                    <input name="endsAt" type="datetime-local" required className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                  </div>
+                  <select name="status" defaultValue="unavailable" className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                    <option value="unavailable">Unavailable</option>
+                    <option value="preferred">Preferred</option>
+                    <option value="available">Available</option>
+                  </select>
+                  <input name="reason" placeholder="Reason" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                  <button className="rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800">
+                    Save Availability
+                  </button>
+                </form>
+              </PortalModal>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="text-slate-500">
+                <tr><th className="pb-2">Guard</th><th className="pb-2">Window</th><th className="pb-2">Status</th><th className="pb-2">Reason</th></tr>
+              </thead>
+              <tbody>
+                {availability.slice(0, 12).map((item) => (
+                  <tr key={item.id} className="border-t border-slate-100">
+                    <td className="py-2.5">{item.email}</td>
+                    <td className="py-2.5">{new Date(item.startsAt).toLocaleString()} - {new Date(item.endsAt).toLocaleString()}</td>
+                    <td className="py-2.5">{item.status}</td>
+                    <td className="py-2.5">{item.reason ?? "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
       <section className="rounded-2xl bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-900">Assign shift</h2>
         <p className="text-sm text-slate-500">Creates a scheduled shift and triggers guard notifications.</p>
-        <form action={createShiftAction} className="mt-3 space-y-3">
-          <select
-            name="siteId"
-            required
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-            defaultValue=""
+        <div className="mt-3">
+          <PortalModal
+            triggerLabel="Assign Shift"
+            title="Assign shift"
+            description="Schedule a guard at a site and notify them through the backend."
+            triggerClassName="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800"
           >
-            <option value="" disabled>
-              Select site
-            </option>
-            {sites.map((site) => (
-              <option key={site.id} value={site.id}>
-                {site.name} (#{site.id})
-              </option>
-            ))}
-          </select>
-          <select
-            name="userId"
-            required
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-            defaultValue=""
-          >
-            <option value="" disabled>
-              Select guard
-            </option>
-            {users.map((user) => (
-              <option key={user.id} value={user.id}>
-                {user.email}
-              </option>
-            ))}
-          </select>
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              name="startsAt"
-              type="datetime-local"
-              required
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-            />
-            <input
-              name="endsAt"
-              type="datetime-local"
-              required
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-            />
-          </div>
-          <button className="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800">
-            Assign Shift
-          </button>
-        </form>
+            <form action={createShiftAction} className="space-y-3">
+              <select
+                name="siteId"
+                required
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+                defaultValue=""
+              >
+                <option value="" disabled>
+                  Select site
+                </option>
+                {sites.map((site) => (
+                  <option key={site.id} value={site.id}>
+                    {site.name} (#{site.id})
+                  </option>
+                ))}
+              </select>
+              <select
+                name="userId"
+                required
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+                defaultValue=""
+              >
+                <option value="" disabled>
+                  Select guard
+                </option>
+                {users.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.email}
+                  </option>
+                ))}
+              </select>
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  name="startsAt"
+                  type="datetime-local"
+                  required
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+                />
+                <input
+                  name="endsAt"
+                  type="datetime-local"
+                  required
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+                />
+              </div>
+              <button className="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800">
+                Save Shift
+              </button>
+            </form>
+          </PortalModal>
+        </div>
       </section>
 
       <section className="rounded-2xl bg-white p-5 shadow-sm">
@@ -232,9 +346,9 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
             className="w-full max-w-md rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
           />
         </form>
-        <div className="mt-4 overflow-x-auto">
+        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-100">
           <table className="w-full text-left text-sm">
-            <thead className="text-slate-500">
+            <thead className="bg-slate-50 text-slate-500">
               <tr>
                 <th className="pb-2">ID</th>
                 <th className="pb-2">Site</th>
@@ -247,7 +361,7 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
             </thead>
             <tbody>
               {pagedShifts.map((shift) => (
-                <tr key={shift.id} className="border-t border-slate-100">
+                <tr key={shift.id} className={`border-t border-slate-100 align-top hover:bg-slate-50/70 ${shiftHasAvailabilityConflict(shift) ? "bg-amber-50" : ""}`}>
                   <td className="py-2.5">#{shift.id}</td>
                   <td className="py-2.5">
                     <select

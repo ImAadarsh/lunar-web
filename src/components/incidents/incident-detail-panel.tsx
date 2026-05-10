@@ -52,7 +52,7 @@ export function IncidentDetailPanel({
         <p className="mt-2 text-sm text-slate-700">{incident.description || "No description provided."}</p>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
+      <section className="grid gap-4 2xl:grid-cols-[1.4fr_1fr]">
         <article className="rounded-2xl bg-white p-5 shadow-sm">
           <h2 className="text-base font-semibold text-slate-900">Attachments</h2>
           {attachments.length === 0 ? (
