@@ -23,6 +23,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             alt="Lunar Security Logo"
             width={56}
             height={56}
+            unoptimized
             className="rounded-xl bg-white/10 p-1.5"
             priority
           />

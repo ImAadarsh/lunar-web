@@ -45,6 +45,7 @@ export function PortalShell({ user, children }: PortalShellProps) {
               alt="Lunar Security"
               width={44}
               height={44}
+              unoptimized
               className="rounded-lg bg-white/10 p-1"
             />
             <div>

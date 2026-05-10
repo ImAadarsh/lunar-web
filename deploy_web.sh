@@ -58,6 +58,16 @@ if [ -e deploy_web.sh ] && ! git ls-files --error-unmatch deploy_web.sh >/dev/nu
   rm -f deploy_web.sh
 fi
 
+# Logo fallback was hotfixed directly on the first server deploy. If GitHub now
+# tracks the same files, discard only that server-side hotfix so pull can apply
+# the canonical repo version.
+if ! git diff --quiet -- src/app/api/assets/logo/route.ts; then
+  git checkout -- src/app/api/assets/logo/route.ts
+fi
+if [ -e public/lunar-logo.svg ] && ! git ls-files --error-unmatch public/lunar-logo.svg >/dev/null 2>&1; then
+  rm -f public/lunar-logo.svg
+fi
+
 git fetch origin "$BRANCH"
 git checkout "$BRANCH"
 git pull --ff-only origin "$BRANCH"
