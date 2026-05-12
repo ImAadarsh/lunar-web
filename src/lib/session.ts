@@ -14,6 +14,16 @@ export type SessionData = {
 
 export const SESSION_COOKIE_NAME = "lsw_session";
 
+/** Cookie flags shared by login, middleware, and session refresh (no maxAge — browser session). */
+export function getSessionCookieStoreOptions() {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax" as const,
+    path: "/",
+  };
+}
+
 export function parseSessionCookie(raw?: string | null): SessionData | null {
   if (!raw) return null;
   try {

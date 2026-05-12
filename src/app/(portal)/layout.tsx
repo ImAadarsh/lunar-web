@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { PortalShell } from "@/components/portal-shell";
+import { SessionKeepAlive } from "@/components/session-keep-alive";
 import { getSessionFromCookies } from "@/lib/server-session";
 
 export default async function PortalLayout({
@@ -7,6 +8,11 @@ export default async function PortalLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   const session = await getSessionFromCookies();
   if (!session) redirect("/login");
-  return <PortalShell user={session.user}>{children}</PortalShell>;
+  return (
+    <>
+      <SessionKeepAlive />
+      <PortalShell user={session.user}>{children}</PortalShell>
+    </>
+  );
 }
 

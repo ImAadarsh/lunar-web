@@ -1,7 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { canAccessPath, parseSessionCookie, SESSION_COOKIE_NAME } from "@/lib/session";
+import {
+  canAccessPath,
+  getSessionCookieStoreOptions,
+  parseSessionCookie,
+  SESSION_COOKIE_NAME,
+} from "@/lib/session";
+import { refreshSessionWithBackend, shouldRefreshAccessToken } from "@/lib/session-refresh";
 
-export function middleware(req: NextRequest) {
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const session = parseSessionCookie(req.cookies.get(SESSION_COOKIE_NAME)?.value);
 
@@ -13,14 +19,39 @@ export function middleware(req: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  if (!canAccessPath(session.user.role, pathname)) {
-    return NextResponse.redirect(new URL("/forbidden", req.url));
+  const cookieOpts = getSessionCookieStoreOptions();
+  let activeSession = session;
+  let refreshedPayload: string | null = null;
+
+  if (shouldRefreshAccessToken(session.accessToken)) {
+    const refreshed = await refreshSessionWithBackend(session);
+    if (!refreshed) {
+      const loginUrl = new URL("/login", req.url);
+      if (pathname !== "/") {
+        loginUrl.searchParams.set("next", pathname);
+      }
+      const res = NextResponse.redirect(loginUrl);
+      res.cookies.delete(SESSION_COOKIE_NAME);
+      return res;
+    }
+    activeSession = refreshed;
+    refreshedPayload = JSON.stringify(refreshed);
   }
 
-  return NextResponse.next();
+  const withCookie = (res: NextResponse) => {
+    if (refreshedPayload) {
+      res.cookies.set(SESSION_COOKIE_NAME, refreshedPayload, cookieOpts);
+    }
+    return res;
+  };
+
+  if (!canAccessPath(activeSession.user.role, pathname)) {
+    return withCookie(NextResponse.redirect(new URL("/forbidden", req.url)));
+  }
+
+  return withCookie(NextResponse.next());
 }
 
 export const config = {
   matcher: ["/", "/admin/:path*", "/manager/:path*", "/staff/:path*"],
 };
-

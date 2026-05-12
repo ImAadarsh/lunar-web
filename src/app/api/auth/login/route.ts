@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { backendApi } from "@/lib/backend";
-import { SESSION_COOKIE_NAME, type SessionData } from "@/lib/session";
+import { getSessionCookieStoreOptions, SESSION_COOKIE_NAME, type SessionData } from "@/lib/session";
 
 type LoginBody = {
   email?: string;
@@ -44,11 +44,7 @@ export async function POST(req: Request) {
       user: twoFa.data.user,
     };
     store.set(SESSION_COOKIE_NAME, JSON.stringify(session), {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: 60 * 60 * 24 * 7,
+      ...getSessionCookieStoreOptions(),
     });
     return NextResponse.json({ success: true, user: session.user });
   }
@@ -84,11 +80,7 @@ export async function POST(req: Request) {
     user: login.data.user,
   };
   store.set(SESSION_COOKIE_NAME, JSON.stringify(session), {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 7,
+    ...getSessionCookieStoreOptions(),
   });
 
   return NextResponse.json({ success: true, user: session.user });
