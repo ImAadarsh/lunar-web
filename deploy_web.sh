@@ -75,7 +75,8 @@ fi
 
 git fetch origin "$BRANCH"
 git checkout "$BRANCH"
-git pull --ff-only origin "$BRANCH"
+# Deploy host must match GitHub; discard server-only edits that would block pull.
+git reset --hard "origin/$BRANCH"
 
 cat > .env.production <<ENV
 BACKEND_API_BASE=$BACKEND_API_BASE
