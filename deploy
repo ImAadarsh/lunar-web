@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Wrapper so `./deploy` works. A folder named deploy/ made ./deploy fail with "permission denied".
+set -euo pipefail
+DIR="$(cd "$(dirname "$0")" && pwd)"
+exec "$DIR/deploy_web.sh" "$@"
