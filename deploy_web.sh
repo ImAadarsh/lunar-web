@@ -30,6 +30,11 @@ if ! command -v git >/dev/null 2>&1; then
   sudo DEBIAN_FRONTEND=noninteractive apt-get install -y git
 fi
 
+if ! command -v curl >/dev/null 2>&1; then
+  sudo apt-get update
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y curl
+fi
+
 if ! command -v npm >/dev/null 2>&1; then
   curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
   sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
@@ -80,12 +85,28 @@ ENV
 npm ci
 npm run build
 
+export APP_DIR PORT PROCESS_NAME
+
+# Run Next under PM2 directly (not via npm) so crashes/OOM are detected and the process is supervised reliably.
 if pm2 describe "$PROCESS_NAME" >/dev/null 2>&1; then
-  pm2 restart "$PROCESS_NAME" --update-env
+  pm2 reload ecosystem.config.cjs --update-env
 else
-  pm2 start npm --name "$PROCESS_NAME" --time -- start -- -p "$PORT"
+  pm2 start ecosystem.config.cjs
 fi
 
 pm2 save
+
+if ! systemctl is-enabled "pm2-${USER}.service" >/dev/null 2>&1; then
+  echo "WARNING: PM2 is not registered with systemd — the app will not come back after a server reboot (502 until manual start)." >&2
+  echo "Fix once on the server: sudo env PATH=\"\$PATH\" \"\$(command -v pm2)\" startup systemd -u \"\$USER\" --hp \"\$HOME\"" >&2
+fi
+
+sleep 2
+if ! curl -fsS "http://127.0.0.1:${PORT}/api/health" >/dev/null; then
+  echo "ERROR: post-deploy health check failed for http://127.0.0.1:${PORT}/api/health" >&2
+  pm2 logs "$PROCESS_NAME" --lines 80 --nostream || true
+  exit 1
+fi
+
 pm2 status
 REMOTE_DEPLOY
