@@ -33,6 +33,7 @@ portal_origin="${PORTAL_ORIGIN:-https://lunar-web.endeavourdigital.cloud}"
 backend_api_public="${BACKEND_API_PUBLIC:-https://lunar.endeavourdigital.cloud/api/v1}"
 rsync_excludes=(
   --exclude .git
+  --exclude .env
   --exclude .env.local
   --exclude .env.development
   --exclude .DS_Store
@@ -172,12 +173,14 @@ BACKEND_API_BASE=${base}
 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=${google_maps_api_key}
 ENV
 cp '${app_dir}/.env.production' '${app_dir}/.env'
+echo '--- server .env.production ---'
+grep BACKEND_API_BASE '${app_dir}/.env.production' || true
 cd '${app_dir}'
+# Restart (not reload) so PM2 drops stale env from dump.pm2 and re-reads ecosystem + .env files.
 if pm2 describe '${process_name}' >/dev/null 2>&1; then
-  pm2 reload ecosystem.config.cjs --update-env
-else
-  pm2 start ecosystem.config.cjs
+  pm2 delete '${process_name}' || true
 fi
+pm2 start ecosystem.config.cjs
 pm2 save
 
 wait_portal_login_probe() {
@@ -282,10 +285,9 @@ npm ci
 npm run build
 
 if pm2 describe "$PROCESS_NAME" >/dev/null 2>&1; then
-  pm2 reload ecosystem.config.cjs --update-env
-else
-  pm2 start ecosystem.config.cjs
+  pm2 delete "$PROCESS_NAME" || true
 fi
+pm2 start ecosystem.config.cjs
 pm2 save
 sleep 3
 curl -fsS "http://127.0.0.1:${PORT}/api/health" >/dev/null
@@ -299,7 +301,8 @@ deploy_env_only() {
   base="${BACKEND_API_BASE:-$backend_api_public}"
   validate_backend_api_base "$base" || die "Set BACKEND_API_BASE to a URL like ${backend_api_public}"
   chmod 400 "$ssh_key"
-  log "Updating server .env only (no build): BACKEND_API_BASE=${base}"
+  log "Updating server env + PM2 (no build): BACKEND_API_BASE=${base}"
+  scp "${ssh_opts[@]}" "${SCRIPT_DIR}/ecosystem.config.cjs" "${ssh_target}:${app_dir}/ecosystem.config.cjs"
   remote_finish "$base"
   log "Env-only deploy complete. Portal: ${portal_origin}"
 }
