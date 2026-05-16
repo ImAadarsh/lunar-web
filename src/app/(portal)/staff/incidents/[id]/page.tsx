@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { backendApiWithSession } from "@/lib/backend";
 import { mutateBackend } from "@/lib/portal-mutations";
 import { IncidentDetailPanel } from "@/components/incidents/incident-detail-panel";
+import { PortalPage, PortalPageBody, PortalPageHeader } from "@/components/portal/portal-page-layout";
 import { getSessionFromCookies } from "@/lib/server-session";
 
 type IncidentDetail = {
@@ -53,30 +54,40 @@ export default async function StaffIncidentDetailPage({ params }: StaffIncidentD
   }
   if (!detailRes.ok || !detailRes.data) {
     return (
-      <section className="rounded-2xl bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold text-slate-900">Incident not available</h2>
-        <p className="mt-2 text-sm text-slate-600">
-          {detailRes.error?.message || "The incident could not be loaded."}
-        </p>
-        <Link href="/staff/incidents" className="mt-4 inline-block text-sm font-semibold text-lunar-700 hover:underline">
-          Back to my incidents
-        </Link>
-      </section>
+      <PortalPage>
+        <PortalPageHeader title="Incident not available" />
+        <PortalPageBody padded>
+          <p className="text-sm text-slate-600">
+            {detailRes.error?.message || "The incident could not be loaded."}
+          </p>
+          <Link href="/staff/incidents" className="mt-4 inline-block text-sm font-semibold text-lunar-700 hover:underline">
+            Back to my incidents
+          </Link>
+        </PortalPageBody>
+      </PortalPage>
     );
   }
 
   return (
-    <div className="space-y-3">
-      <Link href="/staff/incidents" className="text-sm font-semibold text-lunar-700 hover:underline">
-        ← Back to my incidents
-      </Link>
-      <IncidentDetailPanel
-        incident={detailRes.data}
-        heading="Staff Incident Detail"
-        canDeleteAttachments
-        deleteAttachmentAction={deleteAttachmentAction}
+    <PortalPage>
+      <PortalPageHeader
+        title={`Incident #${detailRes.data.id}`}
+        description={detailRes.data.title}
+        actions={
+          <Link href="/staff/incidents" className="lunar-btn-secondary lunar-btn-sm">
+            Back to my incidents
+          </Link>
+        }
       />
-    </div>
+      <PortalPageBody padded>
+        <IncidentDetailPanel
+          incident={detailRes.data}
+          heading="Staff Incident Detail"
+          canDeleteAttachments
+          deleteAttachmentAction={deleteAttachmentAction}
+        />
+      </PortalPageBody>
+    </PortalPage>
   );
 }
 

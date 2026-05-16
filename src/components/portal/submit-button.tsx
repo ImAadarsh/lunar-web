@@ -1,25 +1,39 @@
 "use client";
 
 import { useFormStatus } from "react-dom";
+import { cn } from "@/lib/cn";
 
 type SubmitButtonProps = {
   children: React.ReactNode;
   pendingLabel?: string;
   className?: string;
+  variant?: "primary" | "secondary" | "danger";
 };
 
-export function SubmitButton({ children, pendingLabel = "Saving...", className }: SubmitButtonProps) {
+export function SubmitButton({
+  children,
+  pendingLabel = "Saving…",
+  className,
+  variant = "primary",
+}: SubmitButtonProps) {
   const { pending } = useFormStatus();
+  const variantClass =
+    variant === "danger" ? "lunar-btn-danger" : variant === "secondary" ? "lunar-btn-secondary" : "lunar-btn-primary";
 
   return (
     <button
+      type="submit"
       disabled={pending}
-      className={
-        className ??
-        "w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800 disabled:cursor-not-allowed disabled:opacity-60"
-      }
+      className={cn(variantClass, "w-full", pending && "lunar-shimmer", className)}
     >
-      {pending ? pendingLabel : children}
+      {pending ? (
+        <>
+          <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+          {pendingLabel}
+        </>
+      ) : (
+        children
+      )}
     </button>
   );
 }

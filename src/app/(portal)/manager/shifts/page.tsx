@@ -1,11 +1,45 @@
-import { revalidatePath } from "next/cache";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ApiErrorNotice } from "@/components/portal/api-error-notice";
+import { PortalDataTable, type PortalDataTableColumn } from "@/components/portal/portal-data-table";
 import { PortalModal } from "@/components/portal/portal-modal";
+import {
+  PortalPage,
+  PortalPageHeader,
+  PortalPageTableBody,
+} from "@/components/portal/portal-page-layout";
+import { PortalTabNav } from "@/components/portal/portal-tab-nav";
+import { PortalTableToolbar } from "@/components/portal/portal-table-toolbar";
+import { StatusBadge } from "@/components/portal/status-badge";
+import { ManagerGuardAvailabilityTable } from "@/components/shifts/manager-guard-availability-table";
+import { ShiftDetailModal, type ShiftDetail } from "@/components/shifts/shift-detail-modal";
+import { TrainedSiteGuardPicker } from "@/components/shifts/trained-site-guard-picker";
 import { apiErrorMessage, backendApiWithSession } from "@/lib/backend";
-import { mutateBackend } from "@/lib/portal-mutations";
+import { formatUkDateTime } from "@/lib/format-datetime";
+import {
+  GUARD_RECHARGE_HOURS,
+  guardAvailabilityLabel,
+  mapApiAvailability,
+  shiftDutyLabel,
+  type GuardAvailabilityState,
+} from "@/lib/guard-availability";
+import { displayGuardName } from "@/lib/leave-month-stats";
+import { assignGuardShiftAction, bulkShiftsAction, updateShiftAction } from "@/lib/shift-dashboard-actions";
+import { buildTrainingBySite } from "@/lib/training-by-site";
+import {
+  compareNumbers,
+  compareOptionalDates,
+  compareStrings,
+  filterByQuery,
+  paginateRows,
+  parseSortDir,
+  type SortDirection,
+} from "@/lib/portal-table";
 import { getSessionFromCookies } from "@/lib/server-session";
+
+const BASE_PATH = "/manager/shifts";
+const PAGE_SIZE = 15;
+const SHIFT_SORT_KEYS = ["id", "siteName", "guardName", "startsAt", "endsAt", "duty", "status"] as const;
 
 type ShiftsResponse = {
   items: Array<{
@@ -15,43 +49,79 @@ type ShiftsResponse = {
     startsAt: string;
     endsAt: string;
     status: string;
+    dutyState?: string | null;
+  }>;
+};
+
+type DutyRosterResponse = {
+  items: Array<{
+    userId: number;
+    availability: {
+      state: string;
+      dutyState?: string | null;
+      canAssign?: boolean;
+      rechargingUntil?: string | null;
+      lastShiftEndedAt?: string | null;
+    };
   }>;
 };
 
 type SitesResponse = { items: Array<{ id: number; name: string }> };
-type UsersResponse = { items: Array<{ id: number; email: string; role: string }> };
-type ShiftSwapsResponse = {
-  items: Array<{
-    id: number;
-    shiftId: number;
-    requesterEmail: string;
-    targetEmail?: string | null;
-    status: string;
-    siteId: number;
-    startsAt: string;
-    endsAt: string;
-    createdAt: string;
-  }>;
+type UsersResponse = {
+  items: Array<{ id: number; email: string; role: string; status: string; fullName?: string | null }>;
 };
-type AvailabilityResponse = {
-  items: Array<{
-    id: number;
-    userId: number;
-    email: string;
-    startsAt: string;
-    endsAt: string;
-    status: string;
-    reason?: string | null;
-  }>;
-};
-type ManagerShiftsPageProps = {
-  searchParams: Promise<{ q?: string; page?: string }>;
+type TrainingAssignmentsResponse = {
+  items: Array<{ userId: number; siteId: number }>;
 };
 
-function toLocalInputValue(value: string) {
-  const d = new Date(value);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+type ShiftTableRow = ShiftDetail;
+
+type ManagerShiftsPageProps = {
+  searchParams: Promise<{
+    q?: string;
+    page?: string;
+    tab?: string;
+    sort?: string;
+    dir?: string;
+    status?: string;
+    siteId?: string;
+    state?: string;
+  }>;
+};
+
+const availabilitySortOrder: Record<GuardAvailabilityState, number> = {
+  available: 0,
+  missed_duty: 1,
+  assigned: 2,
+  duty_not_started: 3,
+  on_duty: 4,
+  recharging: 5,
+  disabled: 6,
+};
+
+function sortShiftRows(rows: ShiftTableRow[], sort: string, dir: SortDirection) {
+  const copy = [...rows];
+  copy.sort((a, b) => {
+    switch (sort) {
+      case "id":
+        return compareNumbers(a.id, b.id, dir);
+      case "siteName":
+        return compareStrings(a.siteName, b.siteName, dir);
+      case "guardName":
+        return compareStrings(a.guardName, b.guardName, dir);
+      case "startsAt":
+        return compareOptionalDates(a.startsAt, b.startsAt, dir);
+      case "endsAt":
+        return compareOptionalDates(a.endsAt, b.endsAt, dir);
+      case "duty":
+        return compareStrings(a.dutyState ?? "", b.dutyState ?? "", dir);
+      case "status":
+        return compareStrings(a.status, b.status, dir);
+      default:
+        return compareOptionalDates(a.startsAt, b.startsAt, dir);
+    }
+  });
+  return copy;
 }
 
 export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsPageProps) {
@@ -59,406 +129,354 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
   if (!session) redirect("/login");
   if (!["admin", "supervisor"].includes(session.user.role)) redirect("/forbidden");
 
-  const [shiftsRes, sitesRes, usersRes, swapsRes, availabilityRes] = await Promise.all([
+  const [shiftsRes, sitesRes, usersRes, trainingRes, dutyRosterRes] = await Promise.all([
     backendApiWithSession<ShiftsResponse>("/shifts", session),
     backendApiWithSession<SitesResponse>("/sites", session),
     backendApiWithSession<UsersResponse>("/users?role=guard&limit=200", session),
-    backendApiWithSession<ShiftSwapsResponse>("/shift-swaps?status=pending", session),
-    backendApiWithSession<AvailabilityResponse>("/availability", session),
+    backendApiWithSession<TrainingAssignmentsResponse>("/training/assignments", session),
+    backendApiWithSession<DutyRosterResponse>("/duty/roster", session),
   ]);
 
   const shifts = shiftsRes.data?.items ?? [];
   const sites = sitesRes.data?.items ?? [];
   const users = usersRes.data?.items ?? [];
-  const swaps = swapsRes.data?.items ?? [];
-  const availability = availabilityRes.data?.items ?? [];
+  const trainingBySite = buildTrainingBySite(trainingRes.data?.items ?? []);
+
   const loadErrors = [
     apiErrorMessage("Shifts", shiftsRes),
     apiErrorMessage("Sites", sitesRes),
     apiErrorMessage("Guard users", usersRes),
-    apiErrorMessage("Shift swaps", swapsRes),
-    apiErrorMessage("Availability", availabilityRes),
+    apiErrorMessage("Training", trainingRes),
+    apiErrorMessage("Duty roster", dutyRosterRes),
   ];
+
+  const siteById = new Map(sites.map((s) => [s.id, s.name]));
+  const userById = new Map(users.map((u) => [u.id, u]));
+
+  const dutyByUser = new Map(
+    (dutyRosterRes.data?.items ?? []).map((row) => [row.userId, mapApiAvailability(row.availability)]),
+  );
+
+  const guardRoster = users
+    .map((guard) => ({
+      id: guard.id,
+      name: displayGuardName(guard.fullName, guard.email),
+      email: guard.email,
+      availability:
+        dutyByUser.get(guard.id) ??
+        mapApiAvailability({ state: "disabled", canAssign: false, rechargingUntil: null, lastShiftEndedAt: null }),
+    }))
+    .sort(
+      (a, b) =>
+        availabilitySortOrder[a.availability.state] - availabilitySortOrder[b.availability.state] ||
+        a.name.localeCompare(b.name),
+    );
+
+  const availableCount = guardRoster.filter((g) => g.availability.canAssign).length;
+  const onDutyCount = guardRoster.filter((g) => g.availability.state === "on_duty").length;
+
+  const guardPickerOptions = guardRoster.map(({ id, name, availability }) => ({
+    userId: id,
+    name,
+    availability,
+  }));
+
   const params = await searchParams;
-  const query = (params.q ?? "").trim().toLowerCase();
-  const PAGE_SIZE = 12;
+  const activeTab = params.tab === "availability" ? "availability" : "shifts";
+
+  const shiftRows: ShiftTableRow[] = shifts.map((shift) => {
+    const user = userById.get(shift.userId);
+    const email = user?.email ?? "";
+    return {
+      id: shift.id,
+      siteId: shift.siteId,
+      siteName: siteById.get(shift.siteId) ?? `Site #${shift.siteId}`,
+      userId: shift.userId,
+      guardName: displayGuardName(user?.fullName, email),
+      guardEmail: email,
+      startsAt: shift.startsAt,
+      endsAt: shift.endsAt,
+      status: shift.status,
+      dutyState: shift.dutyState,
+    };
+  });
+
+  const statusFilter = (params.status ?? "").trim();
+  const siteFilter = (params.siteId ?? "").trim();
+  const sort = SHIFT_SORT_KEYS.includes(params.sort as (typeof SHIFT_SORT_KEYS)[number])
+    ? (params.sort as string)
+    : "startsAt";
+  const dir = parseSortDir(params.dir);
   const page = Math.max(1, Number(params.page ?? "1") || 1);
-  const filtered = query
-    ? shifts.filter((s) =>
-        [s.id, s.siteId, s.userId, s.status].join(" ").toLowerCase().includes(query)
-      )
-    : shifts;
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages);
-  const pagedShifts = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
-  async function createShiftAction(formData: FormData) {
-    "use server";
-    const siteId = Number(formData.get("siteId"));
-    const userId = Number(formData.get("userId"));
-    const startsAt = String(formData.get("startsAt") ?? "");
-    const endsAt = String(formData.get("endsAt") ?? "");
-    if (!siteId || !userId || !startsAt || !endsAt) return;
-    await mutateBackend("/shifts", "POST", {
-      siteId,
-      userId,
-      startsAt: new Date(startsAt).toISOString(),
-      endsAt: new Date(endsAt).toISOString(),
-      status: "scheduled",
-    });
-    revalidatePath("/manager/shifts");
+  let filteredShifts = shiftRows;
+  if (statusFilter) {
+    filteredShifts = filteredShifts.filter((s) => s.status === statusFilter);
   }
+  if (siteFilter) {
+    filteredShifts = filteredShifts.filter((s) => String(s.siteId) === siteFilter);
+  }
+  filteredShifts = filterByQuery(filteredShifts, params.q ?? "", (row) =>
+    [row.id, row.siteName, row.guardName, row.guardEmail, row.status, row.dutyState ?? ""].join(" "),
+  );
 
-  async function updateShiftAction(formData: FormData) {
-    "use server";
-    const id = Number(formData.get("id"));
-    const siteId = Number(formData.get("siteId"));
-    const userId = Number(formData.get("userId"));
-    const startsAt = String(formData.get("startsAt") ?? "");
-    const endsAt = String(formData.get("endsAt") ?? "");
-    const status = String(formData.get("status") ?? "").trim();
-    if (!id || !status || !siteId || !userId || !startsAt || !endsAt) return;
-    await mutateBackend(`/shifts/${id}`, "PATCH", {
-      siteId,
-      userId,
-      startsAt: new Date(startsAt).toISOString(),
-      endsAt: new Date(endsAt).toISOString(),
-      status,
-    });
-    revalidatePath("/manager/shifts");
-  }
+  const sortedShifts = sortShiftRows(filteredShifts, sort, dir);
+  const { slice: pageRows, totalCount, totalPages, currentPage } = paginateRows(sortedShifts, page, PAGE_SIZE);
 
-  async function updateSwapAction(formData: FormData) {
-    "use server";
-    const id = Number(formData.get("id"));
-    const status = String(formData.get("status") ?? "");
-    if (!id || !["approved", "rejected"].includes(status)) return;
-    await mutateBackend(`/shift-swaps/${id}`, "PATCH", { status });
-    revalidatePath("/manager/shifts");
-  }
+  const tableQuery = {
+    tab: "shifts",
+    q: params.q,
+    status: statusFilter || undefined,
+    siteId: siteFilter || undefined,
+    sort,
+    dir,
+  };
 
-  async function createAvailabilityAction(formData: FormData) {
-    "use server";
-    const userId = Number(formData.get("userId"));
-    const startsAt = String(formData.get("startsAt") ?? "");
-    const endsAt = String(formData.get("endsAt") ?? "");
-    const status = String(formData.get("status") ?? "unavailable");
-    const reason = String(formData.get("reason") ?? "").trim();
-    if (!userId || !startsAt || !endsAt) return;
-    await mutateBackend("/availability", "POST", {
-      userId,
-      startsAt: new Date(startsAt).toISOString(),
-      endsAt: new Date(endsAt).toISOString(),
-      status,
-      reason: reason || undefined,
-    });
-    revalidatePath("/manager/shifts");
+  const availStateFilter = (params.state ?? "").trim();
+  let filteredGuardRoster = guardRoster;
+  if (availStateFilter) {
+    filteredGuardRoster = filteredGuardRoster.filter((g) => g.availability.state === availStateFilter);
   }
+  filteredGuardRoster = filterByQuery(filteredGuardRoster, params.q ?? "", (g) =>
+    [g.name, g.email, guardAvailabilityLabel(g.availability.state), g.availability.state].join(" "),
+  );
 
-  function shiftHasAvailabilityConflict(shift: ShiftsResponse["items"][number]) {
-    return availability.some((a) => {
-      if (a.userId !== shift.userId || a.status !== "unavailable") return false;
-      return new Date(a.startsAt) < new Date(shift.endsAt) && new Date(a.endsAt) > new Date(shift.startsAt);
-    });
-  }
+  const tabPreserved =
+    activeTab === "shifts"
+      ? {
+          q: params.q,
+          page: currentPage > 1 ? String(currentPage) : undefined,
+          sort,
+          dir,
+          status: statusFilter || undefined,
+          siteId: siteFilter || undefined,
+        }
+      : activeTab === "availability"
+        ? {
+            q: params.q,
+            state: availStateFilter || undefined,
+          }
+        : undefined;
+
+  const assignShiftModal = (
+    <PortalModal
+      triggerLabel="Assign Shift"
+      title="Assign shift"
+      description={`Pick a site first — only trained guards appear. Recharging guards need ${GUARD_RECHARGE_HOURS}h rest after duty.`}
+      triggerClassName="lunar-btn-primary lunar-btn-sm"
+    >
+      <form action={assignGuardShiftAction} className="space-y-3">
+        <TrainedSiteGuardPicker sites={sites} guards={guardPickerOptions} trainingBySite={trainingBySite} />
+        <div className="grid grid-cols-2 gap-2">
+          <input name="startsAt" type="datetime-local" required className="lunar-input" />
+          <input name="endsAt" type="datetime-local" required className="lunar-input" />
+        </div>
+        <button className="lunar-btn-primary w-full">Save shift</button>
+      </form>
+    </PortalModal>
+  );
+
+  const shiftColumns: PortalDataTableColumn<ShiftTableRow>[] = [
+    {
+      id: "id",
+      label: "ID",
+      sortable: true,
+      render: (row) => <span className="font-medium">#{row.id}</span>,
+    },
+    {
+      id: "siteName",
+      label: "Site",
+      sortable: true,
+      render: (row) => (
+        <Link href={`/manager/sites/${row.siteId}`} className="font-medium text-[var(--portal-link)] hover:underline">
+          {row.siteName}
+        </Link>
+      ),
+    },
+    {
+      id: "guardName",
+      label: "Guard",
+      sortable: true,
+      render: (row) => (
+        <div>
+          <Link href={`/manager/guards/${row.userId}`} className="font-medium text-[var(--portal-link)] hover:underline">
+            {row.guardName}
+          </Link>
+          {row.guardEmail ? <p className="text-xs text-[var(--portal-text-muted)]">{row.guardEmail}</p> : null}
+        </div>
+      ),
+    },
+    {
+      id: "startsAt",
+      label: "Start",
+      sortable: true,
+      render: (row) => formatUkDateTime(row.startsAt),
+    },
+    {
+      id: "endsAt",
+      label: "End",
+      sortable: true,
+      render: (row) => formatUkDateTime(row.endsAt),
+    },
+    {
+      id: "duty",
+      label: "Duty",
+      sortable: true,
+      render: (row) =>
+        row.dutyState ? (
+          <span className="lunar-badge-neutral">{shiftDutyLabel(row.dutyState)}</span>
+        ) : (
+          <span className="text-[var(--portal-text-muted)]">—</span>
+        ),
+    },
+    {
+      id: "status",
+      label: "Status",
+      sortable: true,
+      render: (row) => <StatusBadge status={row.status} />,
+    },
+    {
+      id: "actions",
+      label: "",
+      headerClassName: "text-right",
+      cellClassName: "text-right",
+      render: (row) => (
+        <ShiftDetailModal
+          shift={row}
+          sites={sites}
+          guards={guardPickerOptions}
+          trainingBySite={trainingBySite}
+          updateShiftAction={updateShiftAction}
+        />
+      ),
+    },
+  ];
 
   return (
-    <div className="grid gap-4 2xl:grid-cols-[460px_1fr]">
-      <div className="2xl:col-span-2">
+    <PortalPage>
+      <PortalPageHeader
+        title="Shifts"
+        description={`Schedule guards · ${availableCount} assignable · ${onDutyCount} on duty`}
+        actions={assignShiftModal}
+      >
         <ApiErrorNotice errors={loadErrors} />
-      </div>
-      <section className="rounded-2xl bg-white p-5 shadow-sm 2xl:col-span-2">
-        <h2 className="text-lg font-semibold text-slate-900">Pending shift swaps</h2>
-        <p className="text-sm text-slate-500">Approving a targeted swap reassigns the shift after backend conflict checks.</p>
-        {swaps.length === 0 ? (
-          <p className="mt-3 text-sm text-slate-500">No pending swap requests.</p>
-        ) : (
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="text-slate-500">
-                <tr>
-                  <th className="pb-2">Swap</th>
-                  <th className="pb-2">Shift</th>
-                  <th className="pb-2">Requester</th>
-                  <th className="pb-2">Target</th>
-                  <th className="pb-2">When</th>
-                  <th className="pb-2 text-right">Decision</th>
-                </tr>
-              </thead>
-              <tbody>
-                {swaps.map((swap) => (
-                  <tr key={swap.id} className="border-t border-slate-100">
-                    <td className="py-2.5">#{swap.id}</td>
-                    <td className="py-2.5">#{swap.shiftId} · site {swap.siteId}</td>
-                    <td className="py-2.5">{swap.requesterEmail}</td>
-                    <td className="py-2.5">{swap.targetEmail ?? "Open target"}</td>
-                    <td className="py-2.5">{new Date(swap.startsAt).toLocaleString()}</td>
-                    <td className="py-2.5">
-                      <div className="flex justify-end gap-2">
-                        <form action={updateSwapAction}>
-                          <input type="hidden" name="id" value={String(swap.id)} />
-                          <input type="hidden" name="status" value="approved" />
-                          <button className="rounded-md bg-emerald-700 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-800">
-                            Approve
-                          </button>
-                        </form>
-                        <form action={updateSwapAction}>
-                          <input type="hidden" name="id" value={String(swap.id)} />
-                          <input type="hidden" name="status" value="rejected" />
-                          <button className="rounded-md border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50">
-                            Reject
-                          </button>
-                        </form>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-      <section className="rounded-2xl bg-white p-5 shadow-sm 2xl:col-span-2">
-        <div className="grid gap-4 xl:grid-cols-[360px_1fr]">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-900">Availability calendar</h2>
-            <p className="text-sm text-slate-500">Add unavailable or preferred windows. Conflicting shifts are highlighted in the schedule.</p>
-            <div className="mt-3">
-              <PortalModal
-                triggerLabel="Add Availability"
-                title="Add availability window"
-                description="Record unavailable, preferred, or available windows for a guard."
-                triggerClassName="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800"
-              >
-                <form action={createAvailabilityAction} className="grid gap-2">
-                  <select name="userId" required defaultValue="" className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
-                    <option value="" disabled>Select guard</option>
-                    {users.map((user) => (
-                      <option key={user.id} value={user.id}>{user.email}</option>
-                    ))}
-                  </select>
-                  <div className="grid grid-cols-2 gap-2">
-                    <input name="startsAt" type="datetime-local" required className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-                    <input name="endsAt" type="datetime-local" required className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-                  </div>
-                  <select name="status" defaultValue="unavailable" className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
-                    <option value="unavailable">Unavailable</option>
-                    <option value="preferred">Preferred</option>
-                    <option value="available">Available</option>
-                  </select>
-                  <input name="reason" placeholder="Reason" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-                  <button className="rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800">
-                    Save Availability
-                  </button>
-                </form>
-              </PortalModal>
-            </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="text-slate-500">
-                <tr><th className="pb-2">Guard</th><th className="pb-2">Window</th><th className="pb-2">Status</th><th className="pb-2">Reason</th></tr>
-              </thead>
-              <tbody>
-                {availability.slice(0, 12).map((item) => (
-                  <tr key={item.id} className="border-t border-slate-100">
-                    <td className="py-2.5">{item.email}</td>
-                    <td className="py-2.5">{new Date(item.startsAt).toLocaleString()} - {new Date(item.endsAt).toLocaleString()}</td>
-                    <td className="py-2.5">{item.status}</td>
-                    <td className="py-2.5">{item.reason ?? "-"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-      <section className="rounded-2xl bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold text-slate-900">Assign shift</h2>
-        <p className="text-sm text-slate-500">Creates a scheduled shift and triggers guard notifications.</p>
-        <div className="mt-3">
-          <PortalModal
-            triggerLabel="Assign Shift"
-            title="Assign shift"
-            description="Schedule a guard at a site and notify them through the backend."
-            triggerClassName="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800"
-          >
-            <form action={createShiftAction} className="space-y-3">
-              <select
-                name="siteId"
-                required
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-                defaultValue=""
-              >
-                <option value="" disabled>
-                  Select site
-                </option>
-                {sites.map((site) => (
-                  <option key={site.id} value={site.id}>
-                    {site.name} (#{site.id})
-                  </option>
-                ))}
-              </select>
-              <select
-                name="userId"
-                required
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-                defaultValue=""
-              >
-                <option value="" disabled>
-                  Select guard
-                </option>
-                {users.map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {user.email}
-                  </option>
-                ))}
-              </select>
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  name="startsAt"
-                  type="datetime-local"
-                  required
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-                />
-                <input
-                  name="endsAt"
-                  type="datetime-local"
-                  required
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-                />
-              </div>
-              <button className="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800">
-                Save Shift
-              </button>
-            </form>
-          </PortalModal>
-        </div>
-      </section>
-
-      <section className="rounded-2xl bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold text-slate-900">Shifts</h2>
-        <form className="mt-3">
-          <input
-            name="q"
-            defaultValue={query}
-            placeholder="Search by shift/site/user/status"
-            className="w-full max-w-md rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+        <PortalTabNav
+          basePath={BASE_PATH}
+          tabs={[
+            { id: "shifts", label: "Shifts" },
+            { id: "availability", label: "Guard availability" },
+          ]}
+          activeTab={activeTab}
+          preserved={tabPreserved}
+        />
+        {activeTab === "shifts" ? (
+          <PortalTableToolbar
+            basePath={BASE_PATH}
+            preserved={{ tab: "shifts", sort, dir }}
+            fields={[
+              {
+                type: "search",
+                placeholder: "Search shift, site, guard, status…",
+                defaultValue: params.q ?? "",
+              },
+              {
+                type: "select",
+                name: "status",
+                label: "Status",
+                defaultValue: statusFilter,
+                options: [
+                  { value: "", label: "All statuses" },
+                  { value: "scheduled", label: "Scheduled" },
+                  { value: "active", label: "Active" },
+                  { value: "completed", label: "Completed" },
+                  { value: "cancelled", label: "Cancelled" },
+                ],
+              },
+              {
+                type: "select",
+                name: "siteId",
+                label: "Site",
+                defaultValue: siteFilter,
+                options: [
+                  { value: "", label: "All sites" },
+                  ...sites.map((site) => ({ value: String(site.id), label: site.name })),
+                ],
+              },
+            ]}
           />
-        </form>
-        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-100">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-slate-500">
-              <tr>
-                <th className="pb-2">ID</th>
-                <th className="pb-2">Site</th>
-                <th className="pb-2">Guard</th>
-                <th className="pb-2">Start</th>
-                <th className="pb-2">End</th>
-                <th className="pb-2">Status</th>
-                <th className="pb-2 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pagedShifts.map((shift) => (
-                <tr key={shift.id} className={`border-t border-slate-100 align-top hover:bg-slate-50/70 ${shiftHasAvailabilityConflict(shift) ? "bg-amber-50" : ""}`}>
-                  <td className="py-2.5">#{shift.id}</td>
-                  <td className="py-2.5">
-                    <select
-                      form={`shift-update-${shift.id}`}
-                      name="siteId"
-                      defaultValue={String(shift.siteId)}
-                      className="rounded-md border border-slate-300 px-2 py-1 text-xs"
-                    >
-                      {sites.map((site) => (
-                        <option key={site.id} value={site.id}>
-                          {site.name}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="py-2.5">
-                    <select
-                      form={`shift-update-${shift.id}`}
-                      name="userId"
-                      defaultValue={String(shift.userId)}
-                      className="rounded-md border border-slate-300 px-2 py-1 text-xs"
-                    >
-                      {users.map((user) => (
-                        <option key={user.id} value={user.id}>
-                          {user.email}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="py-2.5">
-                    <input
-                      form={`shift-update-${shift.id}`}
-                      name="startsAt"
-                      type="datetime-local"
-                      defaultValue={toLocalInputValue(shift.startsAt)}
-                      className="rounded-md border border-slate-300 px-2 py-1 text-xs"
-                    />
-                  </td>
-                  <td className="py-2.5">
-                    <input
-                      form={`shift-update-${shift.id}`}
-                      name="endsAt"
-                      type="datetime-local"
-                      defaultValue={toLocalInputValue(shift.endsAt)}
-                      className="rounded-md border border-slate-300 px-2 py-1 text-xs"
-                    />
-                  </td>
-                  <td className="py-2.5">
-                    <select
-                      form={`shift-update-${shift.id}`}
-                      name="status"
-                      defaultValue={shift.status}
-                      className="rounded-md border border-slate-300 px-2 py-1 text-xs capitalize"
-                    >
-                      <option value="scheduled">scheduled</option>
-                      <option value="active">active</option>
-                      <option value="completed">completed</option>
-                      <option value="cancelled">cancelled</option>
-                    </select>
-                  </td>
-                  <td className="py-2.5 text-right">
-                    <form id={`shift-update-${shift.id}`} action={updateShiftAction}>
-                      <input type="hidden" name="id" value={String(shift.id)} />
-                      <button className="rounded-md border border-lunar-200 px-3 py-1 text-xs font-semibold text-lunar-700 hover:bg-lunar-50">
-                        Save
-                      </button>
-                    </form>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="mt-4 flex items-center justify-between text-sm">
-          <p className="text-slate-500">
-            Showing {pagedShifts.length} of {filtered.length} shifts
-          </p>
-          <div className="flex items-center gap-2">
-            <Link
-              href={`/manager/shifts?page=${Math.max(1, currentPage - 1)}&q=${encodeURIComponent(query)}`}
-              className={`rounded-md border px-3 py-1 ${currentPage <= 1 ? "pointer-events-none border-slate-200 text-slate-300" : "border-slate-300 text-slate-700 hover:bg-slate-50"}`}
-            >
-              Prev
-            </Link>
-            <span className="text-slate-600">
-              Page {currentPage} / {totalPages}
-            </span>
-            <Link
-              href={`/manager/shifts?page=${Math.min(totalPages, currentPage + 1)}&q=${encodeURIComponent(query)}`}
-              className={`rounded-md border px-3 py-1 ${currentPage >= totalPages ? "pointer-events-none border-slate-200 text-slate-300" : "border-slate-300 text-slate-700 hover:bg-slate-50"}`}
-            >
-              Next
-            </Link>
-          </div>
-        </div>
-      </section>
-    </div>
+        ) : (
+          <PortalTableToolbar
+            basePath={BASE_PATH}
+            preserved={{ tab: "availability" }}
+            fields={[
+              {
+                type: "search",
+                placeholder: "Search guard, email, status…",
+                defaultValue: params.q ?? "",
+              },
+              {
+                type: "select",
+                name: "state",
+                label: "Availability",
+                defaultValue: availStateFilter,
+                options: [
+                  { value: "", label: "All statuses" },
+                  { value: "available", label: "Available" },
+                  { value: "assigned", label: "Assigned" },
+                  { value: "duty_not_started", label: "Duty not started" },
+                  { value: "on_duty", label: "On duty" },
+                  { value: "missed_duty", label: "Missed duty" },
+                  { value: "recharging", label: "Recharging" },
+                  { value: "disabled", label: "Disabled" },
+                ],
+              },
+            ]}
+          />
+        )}
+      </PortalPageHeader>
+
+      <PortalPageTableBody>
+        {activeTab === "shifts" ? (
+          <PortalDataTable
+            basePath={BASE_PATH}
+            query={tableQuery}
+            columns={shiftColumns}
+            rows={pageRows}
+            rowKey={(r) => r.id}
+            emptyMessage="No shifts match your filters."
+            page={currentPage}
+            totalPages={totalPages}
+            totalCount={totalCount}
+            pageSize={PAGE_SIZE}
+            sort={sort}
+            dir={dir}
+            minWidth="52rem"
+            bulk={{
+              formId: "shifts-bulk-form",
+              action: bulkShiftsAction,
+              getRowId: (r) => r.id,
+              actions: [
+                {
+                  label: "Cancel selected",
+                  name: "bulkAction",
+                  value: "cancel",
+                  variant: "secondary",
+                  confirmMessage: "Cancel all selected shifts?",
+                },
+                {
+                  label: "Delete selected",
+                  name: "bulkAction",
+                  value: "delete",
+                  variant: "danger",
+                  confirmMessage: "Permanently delete all selected shifts? This cannot be undone.",
+                },
+              ],
+            }}
+          />
+        ) : (
+          <ManagerGuardAvailabilityTable rows={filteredGuardRoster} />
+        )}
+      </PortalPageTableBody>
+    </PortalPage>
   );
 }
-

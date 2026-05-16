@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
+import { ModalPortal, useBodyScrollLock } from "@/components/ui/modal-portal";
 
 type Checkpoint = {
   id: number;
@@ -16,6 +17,8 @@ type CheckpointQrModalProps = {
 export function CheckpointQrModal({ checkpoint, onClose }: CheckpointQrModalProps) {
   const payload = useMemo(() => String(checkpoint.id), [checkpoint.id]);
   const [dataUrl, setDataUrl] = useState<string | null>(null);
+
+  useBodyScrollLock(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -45,8 +48,20 @@ export function CheckpointQrModal({ checkpoint, onClose }: CheckpointQrModalProp
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4">
-      <div className="w-full max-w-xl rounded-2xl bg-white p-5 shadow-2xl">
+    <ModalPortal>
+      <div
+        className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-md"
+        role="presentation"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) onClose();
+        }}
+      >
+      <div
+        className="w-full max-w-xl rounded-2xl bg-white p-5 shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-lunar-600">Checkpoint QR</p>
@@ -96,7 +111,8 @@ export function CheckpointQrModal({ checkpoint, onClose }: CheckpointQrModalProp
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </ModalPortal>
   );
 }
 

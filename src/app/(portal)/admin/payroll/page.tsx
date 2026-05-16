@@ -2,8 +2,17 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { ApiErrorNotice } from "@/components/portal/api-error-notice";
+import {
+  PortalPage,
+  PortalPageHeader,
+  PortalPageTableBody,
+} from "@/components/portal/portal-page-layout";
+import { PortalTabNav } from "@/components/portal/portal-tab-nav";
 import { PortalModal } from "@/components/portal/portal-modal";
+import { PortalTableToolbar } from "@/components/portal/portal-table-toolbar";
 import { apiErrorMessage, backendApiWithSession } from "@/lib/backend";
+import { filterByQuery } from "@/lib/portal-table";
+import { formatUkDateRange, formatUkDateTime } from "@/lib/format-datetime";
 import { mutateBackend } from "@/lib/portal-mutations";
 import { getSessionFromCookies } from "@/lib/server-session";
 
@@ -61,8 +70,10 @@ type Payslips = {
 };
 type UsersResponse = { items: Array<{ id: number; email: string; role: string }> };
 
+const BASE_PATH = "/admin/payroll";
+
 type PayrollPageProps = {
-  searchParams: Promise<{ runId?: string }>;
+  searchParams: Promise<{ runId?: string; tab?: string; q?: string; status?: string; userId?: string }>;
 };
 
 export default async function AdminPayrollPage({ searchParams }: PayrollPageProps) {
@@ -72,16 +83,69 @@ export default async function AdminPayrollPage({ searchParams }: PayrollPageProp
 
   const params = await searchParams;
   const runId = Number(params.runId);
+  const hasRun = Number.isFinite(runId) && runId > 0;
+  const activeTab = !hasRun
+    ? "runs"
+    : params.tab === "payslips"
+      ? "payslips"
+      : params.tab === "runs"
+        ? "runs"
+        : "lines";
+
   const [runsRes, detailsRes, payslipsRes, usersRes] = await Promise.all([
     backendApiWithSession<PayrollRuns>("/payroll/runs", session),
-    runId ? backendApiWithSession<PayrollDetails>(`/payroll/runs/${runId}`, session) : Promise.resolve(null),
-    runId ? backendApiWithSession<Payslips>(`/payroll/runs/${runId}/payslips`, session) : Promise.resolve(null),
+    hasRun ? backendApiWithSession<PayrollDetails>(`/payroll/runs/${runId}`, session) : Promise.resolve(null),
+    hasRun ? backendApiWithSession<Payslips>(`/payroll/runs/${runId}/payslips`, session) : Promise.resolve(null),
     backendApiWithSession<UsersResponse>("/users?role=guard&limit=200", session),
   ]);
-  const runs = runsRes.data?.items ?? [];
+  const allRuns = runsRes.data?.items ?? [];
   const details = detailsRes?.data ?? null;
-  const payslips = payslipsRes?.data?.items ?? [];
+  const allPayslips = payslipsRes?.data?.items ?? [];
   const users = usersRes.data?.items ?? [];
+  const userEmailById = new Map(users.map((u) => [u.id, u.email]));
+
+  const query = (params.q ?? "").trim();
+  const statusFilter = (params.status ?? "").trim();
+  const userIdFilter = Number(params.userId ?? "");
+
+  let runs = allRuns;
+  if (statusFilter && activeTab === "runs") {
+    runs = runs.filter((run) => run.status === statusFilter);
+  }
+  runs = filterByQuery(runs, query, (run) =>
+    [String(run.id), run.status, run.periodStart, run.periodEnd].join(" "),
+  );
+
+  const allLines = details?.lines ?? [];
+  let lines = allLines;
+  if (userIdFilter) {
+    lines = lines.filter((line) => line.userId === userIdFilter);
+  }
+  lines = filterByQuery(lines, query, (line) =>
+  [
+    String(line.userId),
+    userEmailById.get(line.userId) ?? "",
+    String(line.hoursWorked),
+    String(line.grossPence),
+    String(line.netPence),
+  ].join(" "),
+  );
+
+  let payslips = allPayslips;
+  if (statusFilter && activeTab === "payslips") {
+    payslips = payslips.filter((p) => p.status === statusFilter);
+  }
+  if (userIdFilter) {
+    payslips = payslips.filter((p) => p.userId === userIdFilter);
+  }
+  payslips = filterByQuery(payslips, query, (p) =>
+    [
+      String(p.userId),
+      userEmailById.get(p.userId) ?? "",
+      p.status,
+      String(p.payload.netPence ?? ""),
+    ].join(" "),
+  );
   const loadErrors = [
     apiErrorMessage("Payroll runs", runsRes),
     apiErrorMessage("Payroll run details", detailsRes),
@@ -132,208 +196,339 @@ export default async function AdminPayrollPage({ searchParams }: PayrollPageProp
     revalidatePath("/admin/payroll");
   }
 
-  return (
-    <div className="grid gap-4 2xl:grid-cols-[420px_1fr]">
-      <div className="2xl:col-span-2">
-        <ApiErrorNotice errors={loadErrors} />
-      </div>
-      <section className="space-y-4">
-        <article className="rounded-2xl bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-900">Create payroll run</h2>
-          <p className="mt-1 text-sm text-slate-500">Start a new pay period and process attendance lines.</p>
-          <div className="mt-3">
-            <PortalModal
-              triggerLabel="Create Run"
-              title="Create payroll run"
-              description="Select the pay period to prepare payroll calculations."
-              triggerClassName="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800"
-            >
-              <form action={createRunAction} className="space-y-3">
-                <input
-                  name="periodStart"
-                  type="date"
-                  required
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-                />
-                <input
-                  name="periodEnd"
-                  type="date"
-                  required
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-                />
-                <button className="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800">
-                  Save Payroll Run
-                </button>
-              </form>
-            </PortalModal>
-          </div>
-        </article>
+  const tabs = hasRun
+    ? [
+        { id: "runs", label: "Pay runs" },
+        { id: "lines", label: "Payroll lines" },
+        { id: "payslips", label: "Payslips" },
+      ]
+    : [{ id: "runs", label: "Pay runs" }];
 
-        <article className="rounded-2xl bg-white p-5 shadow-sm">
-          <h3 className="text-base font-semibold text-slate-900">Recent runs</h3>
-          <ul className="mt-3 space-y-2">
-            {runs.map((run) => (
-              <li key={run.id} className="rounded-lg border border-slate-100 p-3">
-                <p className="text-sm font-medium text-slate-900">
-                  Run #{run.id} • {run.periodStart} to {run.periodEnd}
-                </p>
-                <p className="text-xs text-slate-500">{run.status}</p>
-                <Link href={`/admin/payroll?runId=${run.id}`} className="mt-2 inline-block text-xs font-semibold text-lunar-700 hover:underline">
-                  View details
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </article>
-        {details ? (
-          <article className="rounded-2xl bg-white p-5 shadow-sm">
-            <h3 className="text-base font-semibold text-slate-900">Pre-processing adjustment</h3>
-            <p className="text-sm text-slate-500">Use positive pence for additions and negative pence for deductions.</p>
-            <div className="mt-3">
-              <PortalModal
-                triggerLabel="Add Adjustment"
-                title="Pre-processing adjustment"
-                description="Use positive pence for additions and negative pence for deductions."
-                triggerClassName="w-full rounded-lg border border-lunar-200 px-4 py-2 text-sm font-semibold text-lunar-700 hover:bg-lunar-50"
-              >
-                <form action={addAdjustmentAction} className="space-y-3">
-                  <input type="hidden" name="runId" value={String(details.id)} />
-                  <select name="userId" required className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-                    <option value="">Select guard</option>
-                    {users.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.email}
-                      </option>
-                    ))}
-                  </select>
-                  <select name="kind" defaultValue="correction" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-                    <option value="bonus">bonus</option>
-                    <option value="deduction">deduction</option>
-                    <option value="correction">correction</option>
-                    <option value="other">other</option>
-                  </select>
-                  <input name="amountPence" type="number" required placeholder="Amount in pence, e.g. 2500 or -1000" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-                  <input name="reason" placeholder="Reason" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-                  <button className="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800">
-                    Save Adjustment
-                  </button>
-                </form>
-              </PortalModal>
-            </div>
-          </article>
-        ) : null}
-      </section>
+  const tabPreserved = hasRun
+    ? {
+        runId: String(runId),
+        q: params.q,
+        status: statusFilter || undefined,
+        userId: userIdFilter ? String(userIdFilter) : undefined,
+      }
+    : {
+        q: params.q,
+        status: statusFilter || undefined,
+      };
 
-      <section className="space-y-4">
-      <article className="rounded-2xl bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold text-slate-900">Run details</h2>
-        {!details ? (
-          <p className="mt-2 text-sm text-slate-500">Select a payroll run to inspect detailed lines.</p>
-        ) : (
-          <div className="mt-3 space-y-3">
-            <p className="text-sm text-slate-700">
-              Run #{details.id} ({details.status}) • {details.periodStart} - {details.periodEnd}
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {details.status === "completed" ? (
-                <form action={updatePayrollStatusAction}>
-                  <input type="hidden" name="runId" value={String(details.id)} />
-                  <input type="hidden" name="status" value="approved" />
-                  <button className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800">
-                    Approve Run
-                  </button>
-                </form>
-              ) : null}
-              {details.status === "approved" ? (
-                <form action={updatePayrollStatusAction}>
-                  <input type="hidden" name="runId" value={String(details.id)} />
-                  <input type="hidden" name="status" value="finalized" />
-                  <button className="rounded-lg bg-lunar-700 px-3 py-2 text-sm font-semibold text-white hover:bg-lunar-800">
-                    Finalize & Issue Payslips
-                  </button>
-                </form>
-              ) : null}
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="text-slate-500">
-                  <tr>
-                    <th className="pb-2">User</th>
-                    <th className="pb-2">Hours</th>
-                    <th className="pb-2">Adjustments</th>
-                    <th className="pb-2">Gross</th>
-                    <th className="pb-2">OT/Diff</th>
-                    <th className="pb-2">PAYE/NI</th>
-                    <th className="pb-2">Pension</th>
-                    <th className="pb-2">Net</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {details.lines.map((line) => (
-                    <tr key={line.id} className="border-t border-slate-100">
-                      <td className="py-2.5">{line.userId}</td>
-                      <td className="py-2.5">{line.hoursWorked}</td>
-                      <td className="py-2.5">£{((line.metaJson?.adjustmentPence ?? 0) / 100).toFixed(2)}</td>
-                      <td className="py-2.5">£{(line.grossPence / 100).toFixed(2)}</td>
-                      <td className="py-2.5 text-xs text-slate-600">
-                        OT {line.metaJson?.overtimeHours ?? 0}h / £{(((line.metaJson?.overtimePence ?? 0) + (line.metaJson?.nightDifferentialPence ?? 0) + (line.metaJson?.weekendDifferentialPence ?? 0)) / 100).toFixed(2)}
-                      </td>
-                      <td className="py-2.5 text-xs text-slate-600">
-                        £{(((line.metaJson?.payePence ?? 0) + (line.metaJson?.niEmployeePence ?? 0)) / 100).toFixed(2)}
-                      </td>
-                      <td className="py-2.5 text-xs text-slate-600">
-                        £{((line.metaJson?.pensionEmployeePence ?? 0) / 100).toFixed(2)}
-                      </td>
-                      <td className="py-2.5">£{(line.netPence / 100).toFixed(2)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-      </article>
+  const payrollResetHref = hasRun
+    ? `${BASE_PATH}?runId=${runId}&tab=${activeTab}`
+    : `${BASE_PATH}?tab=runs`;
+
+  const guardOptions = users.map((u) => ({ value: String(u.id), label: u.email }));
+
+  const headerDescription = details
+    ? `Run #${details.id} · ${details.status} · ${formatUkDateRange(details.periodStart, details.periodEnd)}`
+    : `${runs.length} of ${allRuns.length} pay run${allRuns.length === 1 ? "" : "s"} · select a run to view lines and payslips`;
+
+  const headerActions = (
+    <>
+      <PortalModal
+        triggerLabel="Create Run"
+        title="Create payroll run"
+        description="Select the pay period to prepare payroll calculations."
+        triggerClassName="lunar-btn-primary lunar-btn-sm"
+      >
+        <form action={createRunAction} className="space-y-3">
+          <input name="periodStart" type="date" required className="lunar-input" />
+          <input name="periodEnd" type="date" required className="lunar-input" />
+          <button className="lunar-btn-primary w-full">Save payroll run</button>
+        </form>
+      </PortalModal>
       {details ? (
-        <article className="rounded-2xl bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-900">Issued payslips</h2>
-          {payslips.length === 0 ? (
-            <p className="mt-2 text-sm text-slate-500">Payslips are generated when a run is finalized.</p>
-          ) : (
-            <div className="mt-3 overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="text-slate-500">
+        <>
+          <PortalModal
+            triggerLabel="Add Adjustment"
+            title="Pre-processing adjustment"
+            description="Use positive pence for additions and negative pence for deductions."
+            triggerClassName="lunar-btn-secondary lunar-btn-sm"
+          >
+            <form action={addAdjustmentAction} className="space-y-3">
+              <input type="hidden" name="runId" value={String(details.id)} />
+              <select name="userId" required className="lunar-input">
+                <option value="">Select guard</option>
+                {users.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.email}
+                  </option>
+                ))}
+              </select>
+              <select name="kind" defaultValue="correction" className="lunar-input">
+                <option value="bonus">bonus</option>
+                <option value="deduction">deduction</option>
+                <option value="correction">correction</option>
+                <option value="other">other</option>
+              </select>
+              <input
+                name="amountPence"
+                type="number"
+                required
+                placeholder="Amount in pence, e.g. 2500 or -1000"
+                className="lunar-input"
+              />
+              <input name="reason" placeholder="Reason" className="lunar-input" />
+              <button className="lunar-btn-primary w-full">Save adjustment</button>
+            </form>
+          </PortalModal>
+          {details.status === "completed" ? (
+            <form action={updatePayrollStatusAction}>
+              <input type="hidden" name="runId" value={String(details.id)} />
+              <input type="hidden" name="status" value="approved" />
+              <button type="submit" className="lunar-btn-secondary lunar-btn-sm">
+                Approve run
+              </button>
+            </form>
+          ) : null}
+          {details.status === "approved" ? (
+            <form action={updatePayrollStatusAction}>
+              <input type="hidden" name="runId" value={String(details.id)} />
+              <input type="hidden" name="status" value="finalized" />
+              <button type="submit" className="lunar-btn-primary lunar-btn-sm">
+                Finalize & issue payslips
+              </button>
+            </form>
+          ) : null}
+        </>
+      ) : null}
+    </>
+  );
+
+  return (
+    <PortalPage>
+      <PortalPageHeader title="Payroll" description={headerDescription} actions={headerActions}>
+        <ApiErrorNotice errors={loadErrors} />
+        <PortalTabNav basePath={BASE_PATH} tabs={tabs} activeTab={activeTab} preserved={tabPreserved} />
+        {activeTab === "runs" ? (
+          <PortalTableToolbar
+            basePath={BASE_PATH}
+            preserved={{ tab: "runs" }}
+            resetHref={payrollResetHref}
+            fields={[
+              {
+                type: "search",
+                placeholder: "Search run ID, period, status…",
+                defaultValue: query,
+              },
+              {
+                type: "select",
+                name: "status",
+                label: "Status",
+                defaultValue: statusFilter,
+                options: [
+                  { value: "", label: "All statuses" },
+                  { value: "draft", label: "Draft" },
+                  { value: "processing", label: "Processing" },
+                  { value: "completed", label: "Completed" },
+                  { value: "approved", label: "Approved" },
+                  { value: "finalized", label: "Finalized" },
+                ],
+              },
+            ]}
+          />
+        ) : activeTab === "lines" && hasRun ? (
+          <PortalTableToolbar
+            basePath={BASE_PATH}
+            preserved={{ tab: "lines", runId: String(runId) }}
+            resetHref={payrollResetHref}
+            fields={[
+              {
+                type: "search",
+                placeholder: "Search guard, hours, amounts…",
+                defaultValue: query,
+              },
+              {
+                type: "select",
+                name: "userId",
+                label: "Guard",
+                defaultValue: userIdFilter ? String(userIdFilter) : "",
+                options: [{ value: "", label: "All guards" }, ...guardOptions],
+              },
+            ]}
+          />
+        ) : activeTab === "payslips" && hasRun ? (
+          <PortalTableToolbar
+            basePath={BASE_PATH}
+            preserved={{ tab: "payslips", runId: String(runId) }}
+            resetHref={payrollResetHref}
+            fields={[
+              {
+                type: "search",
+                placeholder: "Search guard, status, net pay…",
+                defaultValue: query,
+              },
+              {
+                type: "select",
+                name: "status",
+                label: "Status",
+                defaultValue: statusFilter,
+                options: [
+                  { value: "", label: "All statuses" },
+                  { value: "draft", label: "Draft" },
+                  { value: "issued", label: "Issued" },
+                  { value: "sent", label: "Sent" },
+                  { value: "read", label: "Read" },
+                ],
+              },
+              {
+                type: "select",
+                name: "userId",
+                label: "Guard",
+                defaultValue: userIdFilter ? String(userIdFilter) : "",
+                options: [{ value: "", label: "All guards" }, ...guardOptions],
+              },
+            ]}
+          />
+        ) : null}
+      </PortalPageHeader>
+
+      <PortalPageTableBody>
+        {activeTab === "runs" ? (
+          <div className="lunar-table-wrap min-h-0 flex-1 overflow-auto rounded-none border-0 bg-transparent">
+            <table className="portal-table min-w-[40rem]">
+              <thead>
+                <tr>
+                  <th>Run</th>
+                  <th>Period</th>
+                  <th>Status</th>
+                  <th>Created</th>
+                  <th className="text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {runs.length === 0 ? (
                   <tr>
-                    <th className="pb-2">User</th>
-                    <th className="pb-2">Status</th>
-                    <th className="pb-2">Issued</th>
-                    <th className="pb-2">Net</th>
-                    <th className="pb-2">Lifecycle</th>
-                    <th className="pb-2 text-right">Actions</th>
+                    <td colSpan={5} className="py-12 text-center text-[var(--portal-text-muted)]">
+                      {allRuns.length === 0
+                        ? "No payroll runs yet. Use Create Run to start a pay period."
+                        : "No pay runs match your filters."}
+                    </td>
+                  </tr>
+                ) : (
+                  runs.map((run) => (
+                    <tr key={run.id}>
+                      <td className="font-medium tabular-nums">#{run.id}</td>
+                      <td>
+                        {formatUkDateRange(run.periodStart, run.periodEnd)}
+                      </td>
+                      <td className="capitalize">{run.status}</td>
+                      <td className="text-[var(--portal-text-muted)]">
+                        {formatUkDateTime(run.createdAt)}
+                      </td>
+                      <td className="text-right">
+                        <Link
+                          href={`${BASE_PATH}?runId=${run.id}&tab=lines`}
+                          className="lunar-btn-secondary lunar-btn-sm"
+                        >
+                          Open
+                        </Link>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        ) : activeTab === "lines" && details ? (
+          <div className="lunar-table-wrap min-h-0 flex-1 overflow-auto rounded-none border-0 bg-transparent">
+            <table className="portal-table min-w-[56rem]">
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Hours</th>
+                  <th>Adjustments</th>
+                  <th>Gross</th>
+                  <th>OT/Diff</th>
+                  <th>PAYE/NI</th>
+                  <th>Pension</th>
+                  <th>Net</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lines.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-12 text-center text-[var(--portal-text-muted)]">
+                      {allLines.length === 0
+                        ? "No payroll lines for this run."
+                        : "No payroll lines match your filters."}
+                    </td>
+                  </tr>
+                ) : null}
+                {lines.map((line) => (
+                  <tr key={line.id}>
+                    <td>{userEmailById.get(line.userId) ?? `User #${line.userId}`}</td>
+                    <td>{line.hoursWorked}</td>
+                    <td>£{((line.metaJson?.adjustmentPence ?? 0) / 100).toFixed(2)}</td>
+                    <td>£{(line.grossPence / 100).toFixed(2)}</td>
+                    <td className="text-xs text-[var(--portal-text-muted)]">
+                      OT {line.metaJson?.overtimeHours ?? 0}h / £
+                      {(
+                        ((line.metaJson?.overtimePence ?? 0) +
+                          (line.metaJson?.nightDifferentialPence ?? 0) +
+                          (line.metaJson?.weekendDifferentialPence ?? 0)) /
+                        100
+                      ).toFixed(2)}
+                    </td>
+                    <td className="text-xs text-[var(--portal-text-muted)]">
+                      £{(((line.metaJson?.payePence ?? 0) + (line.metaJson?.niEmployeePence ?? 0)) / 100).toFixed(2)}
+                    </td>
+                    <td className="text-xs text-[var(--portal-text-muted)]">
+                      £{((line.metaJson?.pensionEmployeePence ?? 0) / 100).toFixed(2)}
+                    </td>
+                    <td>£{(line.netPence / 100).toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : activeTab === "payslips" ? (
+          allPayslips.length === 0 ? (
+            <p className="p-6 text-center text-sm text-[var(--portal-text-muted)]">
+              Payslips are generated when a run is finalized.
+            </p>
+          ) : payslips.length === 0 ? (
+            <p className="p-6 text-center text-sm text-[var(--portal-text-muted)]">
+              No payslips match your filters.
+            </p>
+          ) : (
+            <div className="lunar-table-wrap min-h-0 flex-1 overflow-auto rounded-none border-0 bg-transparent">
+              <table className="portal-table min-w-[48rem]">
+                <thead>
+                  <tr>
+                    <th>User</th>
+                    <th>Status</th>
+                    <th>Issued</th>
+                    <th>Net</th>
+                    <th>Lifecycle</th>
+                    <th className="text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {payslips.map((payslip) => (
-                    <tr key={payslip.id} className="border-t border-slate-100">
-                      <td className="py-2.5">{payslip.userId}</td>
-                      <td className="py-2.5">{payslip.status}</td>
-                      <td className="py-2.5">{payslip.issuedAt ? new Date(payslip.issuedAt).toLocaleString() : "-"}</td>
-                      <td className="py-2.5">£{((payslip.payload.netPence ?? 0) / 100).toFixed(2)}</td>
-                      <td className="py-2.5 text-xs text-slate-600">
-                        sent {payslip.sentAt ? new Date(payslip.sentAt).toLocaleDateString() : "-"} / read {payslip.readAt ? new Date(payslip.readAt).toLocaleDateString() : "-"}
+                    <tr key={payslip.id}>
+                      <td>{userEmailById.get(payslip.userId) ?? `User #${payslip.userId}`}</td>
+                      <td>{payslip.status}</td>
+                      <td>{payslip.issuedAt ? formatUkDateTime(payslip.issuedAt) : "—"}</td>
+                      <td>£{((payslip.payload.netPence ?? 0) / 100).toFixed(2)}</td>
+                      <td className="text-xs text-[var(--portal-text-muted)]">
+                        sent {payslip.sentAt ? formatUkDateTime(payslip.sentAt) : "—"} / read{" "}
+                        {payslip.readAt ? formatUkDateTime(payslip.readAt) : "—"}
                       </td>
-                      <td className="py-2.5 text-right">
+                      <td className="text-right">
                         <div className="flex justify-end gap-2">
                           <a
                             href={`/api/portal/payslips/${payslip.id}/file`}
-                            className="rounded-md border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            className="lunar-btn-secondary lunar-btn-sm"
                           >
                             Download
                           </a>
                           <form action={sendPayslipAction}>
                             <input type="hidden" name="payslipId" value={String(payslip.id)} />
-                            <button className="rounded-md bg-lunar-700 px-3 py-1 text-xs font-semibold text-white hover:bg-lunar-800">
-                              Send
-                            </button>
+                            <button className="lunar-btn-primary lunar-btn-sm">Send</button>
                           </form>
                         </div>
                       </td>
@@ -342,11 +537,13 @@ export default async function AdminPayrollPage({ searchParams }: PayrollPageProp
                 </tbody>
               </table>
             </div>
-          )}
-        </article>
-      ) : null}
-      </section>
-    </div>
+          )
+        ) : (
+          <p className="p-6 text-center text-sm text-[var(--portal-text-muted)]">
+            Select a pay run from the Pay runs tab.
+          </p>
+        )}
+      </PortalPageTableBody>
+    </PortalPage>
   );
 }
-

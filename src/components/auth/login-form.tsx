@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { cn } from "@/lib/cn";
 
 type LoginFormProps = {
   redirectTo?: string;
@@ -54,11 +55,14 @@ export function LoginForm({ redirectTo }: LoginFormProps) {
     }
   }
 
+  const fieldClass =
+    "w-full rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-white placeholder:text-white/35 outline-none transition duration-200 hover:border-white/25 focus:border-lunar-300 focus:bg-white/10 focus:ring-2 focus:ring-lunar-300/30";
+
   return (
     <form onSubmit={submit} className="space-y-4">
       {!isTwoFactor ? (
         <>
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             <label className="text-sm font-medium text-white/90" htmlFor="email">
               Email
             </label>
@@ -69,12 +73,12 @@ export function LoginForm({ redirectTo }: LoginFormProps) {
               autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-white placeholder:text-white/40 outline-none transition focus:border-lunar-300 focus:ring-2 focus:ring-lunar-300/40"
+              className={fieldClass}
               placeholder="admin@lunarsecurity.com"
             />
           </div>
 
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             <label className="text-sm font-medium text-white/90" htmlFor="password">
               Password
             </label>
@@ -85,15 +89,15 @@ export function LoginForm({ redirectTo }: LoginFormProps) {
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-white placeholder:text-white/40 outline-none transition focus:border-lunar-300 focus:ring-2 focus:ring-lunar-300/40"
+              className={fieldClass}
               placeholder="Enter your password"
             />
           </div>
         </>
       ) : (
-        <div className="space-y-1">
+        <div className="space-y-1.5 animate-fade-in">
           <label className="text-sm font-medium text-white/90" htmlFor="token">
-            Two-factor token
+            Two-factor code
           </label>
           <input
             id="token"
@@ -101,27 +105,41 @@ export function LoginForm({ redirectTo }: LoginFormProps) {
             inputMode="numeric"
             pattern="[0-9]*"
             required
+            autoFocus
             value={token}
             onChange={(e) => setToken(e.target.value)}
-            className="w-full rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-white placeholder:text-white/40 outline-none transition focus:border-lunar-300 focus:ring-2 focus:ring-lunar-300/40"
-            placeholder="123456"
+            className={cn(fieldClass, "text-center text-lg tracking-[0.3em]")}
+            placeholder="• • • • • •"
           />
-          <p className="text-xs text-lunar-100/80">
-            Two-factor authentication is enabled for this account.
-          </p>
+          <p className="text-xs text-lunar-100/75">Enter the code from your authenticator app.</p>
         </div>
       )}
 
-      {error ? <p className="text-sm text-rose-300">{error}</p> : null}
+      {error ? (
+        <p className="animate-fade-in rounded-lg border border-rose-400/30 bg-rose-500/15 px-3 py-2 text-sm text-rose-100" role="alert">
+          {error}
+        </p>
+      ) : null}
 
       <button
         type="submit"
         disabled={loading}
-        className="w-full rounded-xl bg-lunar-400 px-4 py-2.5 font-semibold text-lunar-950 transition hover:bg-lunar-300 disabled:cursor-not-allowed disabled:opacity-70"
+        className={cn(
+          "lunar-btn w-full bg-lunar-400 text-lunar-950 hover:bg-lunar-300 hover:shadow-glow",
+          loading && "lunar-shimmer",
+        )}
       >
-        {loading ? "Signing in..." : isTwoFactor ? "Verify & continue" : "Sign in"}
+        {loading ? (
+          <>
+            <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-lunar-800/30 border-t-lunar-950" />
+            {isTwoFactor ? "Verifying…" : "Signing in…"}
+          </>
+        ) : isTwoFactor ? (
+          "Verify & continue"
+        ) : (
+          "Sign in"
+        )}
       </button>
     </form>
   );
 }
-

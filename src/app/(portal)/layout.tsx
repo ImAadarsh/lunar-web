@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { PortalShell } from "@/components/portal-shell";
+import { PortalChrome } from "@/components/portal-chrome";
 import { SessionKeepAlive } from "@/components/session-keep-alive";
 import { getSessionFromCookies } from "@/lib/server-session";
 
@@ -11,7 +11,7 @@ export default async function PortalLayout({
   return (
     <>
       <SessionKeepAlive />
-      <PortalShell user={session.user}>{children}</PortalShell>
+      <PortalChrome user={session.user}>{children}</PortalChrome>
     </>
   );
 }

@@ -1,4 +1,5 @@
 import { AttachmentGallery } from "@/components/incidents/attachment-gallery";
+import { formatUkDateTime } from "@/lib/format-datetime";
 
 type IncidentAttachment = {
   id: number;
@@ -41,7 +42,7 @@ export function IncidentDetailPanel({
 
   return (
     <div className="space-y-4">
-      <section className="rounded-2xl bg-white p-5 shadow-sm">
+      <section className="lunar-card lunar-card-pad">
         <p className="text-xs uppercase tracking-[0.2em] text-lunar-600">{heading}</p>
         <h1 className="mt-1 text-xl font-bold text-slate-900">
           Incident #{incident.id}: {incident.title}
@@ -53,8 +54,8 @@ export function IncidentDetailPanel({
       </section>
 
       <section className="grid gap-4 2xl:grid-cols-[1.4fr_1fr]">
-        <article className="rounded-2xl bg-white p-5 shadow-sm">
-          <h2 className="text-base font-semibold text-slate-900">Attachments</h2>
+        <article className="lunar-card lunar-card-pad">
+          <h2 className="portal-section-title">Attachments</h2>
           {attachments.length === 0 ? (
             <p className="mt-2 text-sm text-slate-500">No media attachments yet.</p>
           ) : (
@@ -69,19 +70,19 @@ export function IncidentDetailPanel({
           )}
         </article>
 
-        <article className="rounded-2xl bg-white p-5 shadow-sm">
-          <h2 className="text-base font-semibold text-slate-900">Timeline</h2>
+        <article className="lunar-card lunar-card-pad">
+          <h2 className="portal-section-title">Timeline</h2>
           <ol className="mt-3 space-y-3 text-sm">
             <li className="rounded-lg border border-slate-100 p-3">
               <p className="font-medium text-slate-900">Created</p>
-              <p className="text-slate-600">{new Date(incident.createdAt).toLocaleString()}</p>
+              <p className="text-slate-600">{formatUkDateTime(incident.createdAt)}</p>
             </li>
             <li className="rounded-lg border border-slate-100 p-3">
               <p className="font-medium text-slate-900">Current status</p>
               <p className="text-slate-600 capitalize">{incident.status}</p>
               {incident.updatedAt ? (
                 <p className="mt-1 text-xs text-slate-500">
-                  Updated {new Date(incident.updatedAt).toLocaleString()}
+                  Updated {formatUkDateTime(incident.updatedAt)}
                 </p>
               ) : null}
             </li>

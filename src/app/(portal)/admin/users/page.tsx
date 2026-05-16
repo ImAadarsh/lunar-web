@@ -1,26 +1,57 @@
 import { revalidatePath } from "next/cache";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { ApiErrorNotice } from "@/components/portal/api-error-notice";
+import { PortalDataTable, type PortalDataTableColumn } from "@/components/portal/portal-data-table";
 import { PortalModal } from "@/components/portal/portal-modal";
+import { PortalPage, PortalPageHeader, PortalPageTableBody } from "@/components/portal/portal-page-layout";
+import { PortalTableToolbar } from "@/components/portal/portal-table-toolbar";
 import { backendApiWithSession } from "@/lib/backend";
 import { mutateBackend } from "@/lib/portal-mutations";
+import {
+  compareStrings,
+  filterByQuery,
+  paginateRows,
+  parseBulkIds,
+  parseSortDir,
+  type SortDirection,
+} from "@/lib/portal-table";
 import { getSessionFromCookies } from "@/lib/server-session";
 
-type UsersResponse = {
-  items: Array<{
-    id: number;
-    email: string;
-    phone?: string;
-    role: "admin" | "supervisor" | "guard";
-    status: "active" | "invited" | "suspended";
-    created_at?: string;
-  }>;
-  total: number;
+const BASE_PATH = "/admin/users";
+const PAGE_SIZE = 15;
+const SORT_KEYS = ["email", "role", "status", "phone"] as const;
+
+type UserRow = {
+  id: number;
+  email: string;
+  phone?: string;
+  role: "admin" | "supervisor" | "guard";
+  status: "active" | "invited" | "suspended";
 };
 
+type UsersResponse = { items: UserRow[]; total: number };
+
 type AdminUsersPageProps = {
-  searchParams: Promise<{ q?: string; page?: string; error?: string }>;
+  searchParams: Promise<{ q?: string; page?: string; sort?: string; dir?: string; role?: string; status?: string; error?: string }>;
 };
+
+function sortUsers(rows: UserRow[], sort: string, dir: SortDirection) {
+  const copy = [...rows];
+  copy.sort((a, b) => {
+    switch (sort) {
+      case "role":
+        return compareStrings(a.role, b.role, dir);
+      case "status":
+        return compareStrings(a.status, b.status, dir);
+      case "phone":
+        return compareStrings(a.phone ?? "", b.phone ?? "", dir);
+      default:
+        return compareStrings(a.email, b.email, dir);
+    }
+  });
+  return copy;
+}
 
 export default async function AdminUsersPage({ searchParams }: AdminUsersPageProps) {
   const session = await getSessionFromCookies();
@@ -32,18 +63,22 @@ export default async function AdminUsersPage({ searchParams }: AdminUsersPagePro
   const usersLoadError = usersRes.ok ? "" : (usersRes.error?.message ?? "Unable to load users");
 
   const params = await searchParams;
-  const PAGE_SIZE = 15;
-  const query = (params.q ?? "").trim().toLowerCase();
-  const actionError = (params.error ?? "").trim();
+  const q = (params.q ?? "").trim();
+  const roleFilter = (params.role ?? "").trim();
+  const statusFilter = (params.status ?? "").trim();
+  const sort = SORT_KEYS.includes(params.sort as (typeof SORT_KEYS)[number]) ? (params.sort as string) : "email";
+  const dir = parseSortDir(params.dir);
   const page = Math.max(1, Number(params.page ?? "1") || 1);
-  const filtered = query
-    ? allUsers.filter((u) =>
-        [u.email, u.phone ?? "", u.role, u.status].join(" ").toLowerCase().includes(query)
-      )
-    : allUsers;
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages);
-  const users = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const actionError = (params.error ?? "").trim();
+
+  let filtered = allUsers;
+  if (roleFilter) filtered = filtered.filter((u) => u.role === roleFilter);
+  if (statusFilter) filtered = filtered.filter((u) => u.status === statusFilter);
+  filtered = filterByQuery(filtered, q, (u) => [u.email, u.phone ?? "", u.role, u.status].join(" "));
+
+  const sorted = sortUsers(filtered, sort, dir);
+  const { slice: users, totalCount, totalPages, currentPage } = paginateRows(sorted, page, PAGE_SIZE);
+  const tableQuery = { q: params.q, role: roleFilter, status: statusFilter, sort, dir };
 
   async function createUserAction(formData: FormData) {
     "use server";
@@ -61,9 +96,9 @@ export default async function AdminUsersPage({ searchParams }: AdminUsersPagePro
         status: "active",
       });
     } catch (e) {
-      redirect(`/admin/users?error=${encodeURIComponent(e instanceof Error ? e.message : "Unable to create user")}`);
+      redirect(`${BASE_PATH}?error=${encodeURIComponent(e instanceof Error ? e.message : "Unable to create user")}`);
     }
-    revalidatePath("/admin/users");
+    revalidatePath(BASE_PATH);
   }
 
   async function suspendAction(formData: FormData) {
@@ -71,7 +106,17 @@ export default async function AdminUsersPage({ searchParams }: AdminUsersPagePro
     const id = Number(formData.get("id"));
     if (!id) return;
     await mutateBackend(`/users/${id}`, "DELETE");
-    revalidatePath("/admin/users");
+    revalidatePath(BASE_PATH);
+  }
+
+  async function bulkSuspendAction(formData: FormData) {
+    "use server";
+    const ids = parseBulkIds(formData);
+    if (!ids.length) return;
+    for (const id of ids) {
+      await mutateBackend(`/users/${id}`, "DELETE");
+    }
+    revalidatePath(BASE_PATH);
   }
 
   async function updateUserAction(formData: FormData) {
@@ -90,196 +135,214 @@ export default async function AdminUsersPage({ searchParams }: AdminUsersPagePro
         payRatePenceHour: payRatePenceHour ? Number(payRatePenceHour) : null,
       });
     } catch (e) {
-      redirect(`/admin/users?error=${encodeURIComponent(e instanceof Error ? e.message : "Unable to update user")}`);
+      redirect(`${BASE_PATH}?error=${encodeURIComponent(e instanceof Error ? e.message : "Unable to update user")}`);
     }
-    revalidatePath("/admin/users");
+    revalidatePath(BASE_PATH);
   }
 
+  const columns: PortalDataTableColumn<UserRow>[] = [
+    {
+      id: "email",
+      label: "Email",
+      sortable: true,
+      render: (user) => (
+        <div>
+          <p className="font-medium">{user.email}</p>
+          <div className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5">
+            <Link href={`/admin/users/${user.id}`} className="text-xs font-semibold text-lunar-700 hover:underline">
+              HR profile
+            </Link>
+            {user.role === "guard" ? (
+              <Link href={`/manager/guards/${user.id}`} className="text-xs font-semibold text-lunar-700 hover:underline">
+                Ops dashboard
+              </Link>
+            ) : null}
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: "role",
+      label: "Role",
+      sortable: true,
+      render: (user) => (
+        <select form={`user-update-${user.id}`} name="role" defaultValue={user.role} className="lunar-input-sm">
+          <option value="guard">guard</option>
+          <option value="supervisor">supervisor</option>
+          <option value="admin">admin</option>
+        </select>
+      ),
+    },
+    {
+      id: "status",
+      label: "Status",
+      sortable: true,
+      render: (user) => (
+        <select form={`user-update-${user.id}`} name="status" defaultValue={user.status} className="lunar-input-sm">
+          <option value="active">active</option>
+          <option value="invited">invited</option>
+          <option value="suspended">suspended</option>
+        </select>
+      ),
+    },
+    {
+      id: "phone",
+      label: "Phone",
+      sortable: true,
+      render: (user) => (
+        <input
+          form={`user-update-${user.id}`}
+          name="phone"
+          defaultValue={user.phone ?? ""}
+          className="lunar-input-sm w-28"
+        />
+      ),
+    },
+    {
+      id: "payRate",
+      label: "Pay rate",
+      render: (user) => (
+        <input
+          form={`user-update-${user.id}`}
+          name="payRatePenceHour"
+          type="number"
+          min="0"
+          placeholder="pence/hr"
+          className="lunar-input-sm w-28"
+        />
+      ),
+    },
+    {
+      id: "actions",
+      label: "Actions",
+      headerClassName: "text-right",
+      cellClassName: "text-right",
+      render: (user) => (
+        <div className="flex items-center justify-end gap-2">
+          <form id={`user-update-${user.id}`} action={updateUserAction}>
+            <input type="hidden" name="id" value={String(user.id)} />
+            <button type="submit" className="lunar-btn-secondary lunar-btn-sm">
+              Save
+            </button>
+          </form>
+          {user.status !== "suspended" ? (
+            <form action={suspendAction}>
+              <input type="hidden" name="id" value={String(user.id)} />
+              <button type="submit" className="lunar-btn-danger lunar-btn-sm">
+                Suspend
+              </button>
+            </form>
+          ) : (
+            <span className="text-xs text-[var(--portal-text-muted)]">Suspended</span>
+          )}
+        </div>
+      ),
+    },
+  ];
+
   return (
-    <div className="grid gap-4 2xl:grid-cols-[380px_1fr]">
-      <section className="rounded-2xl bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold text-slate-900">Create user</h2>
-        <p className="text-sm text-slate-500">Adds Admin, Manager (supervisor), or Staff (guard) users.</p>
-        {actionError ? (
-          <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-            {actionError}
-          </p>
-        ) : null}
-        <div className="mt-4">
+    <PortalPage>
+      <PortalPageHeader
+        title="Users"
+        description={`${totalCount} user${totalCount === 1 ? "" : "s"} · search, filter, sort, bulk suspend`}
+        actions={
           <PortalModal
-            triggerLabel="Create User"
+            triggerLabel="Create user"
             title="Create user"
             description="Add a dashboard or guard app user with role and optional phone details."
-            triggerClassName="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800"
+            triggerClassName="lunar-btn-primary"
           >
             <form action={createUserAction} className="space-y-3">
-              <input
-                name="email"
-                type="email"
-                required
-                placeholder="email@example.com"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-              />
+              <input name="email" type="email" required placeholder="email@example.com" className="lunar-input" />
               <input
                 name="password"
                 type="password"
                 required
                 minLength={8}
                 placeholder="Password (min 8 chars)"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+                className="lunar-input"
               />
-              <select
-                name="role"
-                defaultValue="guard"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-              >
+              <select name="role" defaultValue="guard" className="lunar-input">
                 <option value="guard">Staff (guard)</option>
                 <option value="supervisor">Manager (supervisor)</option>
                 <option value="admin">Admin</option>
               </select>
-              <input
-                name="phone"
-                type="text"
-                placeholder="Phone (optional)"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-              />
-              <button className="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800">
+              <input name="phone" type="text" placeholder="Phone (optional)" className="lunar-input" />
+              <button type="submit" className="lunar-btn-primary w-full">
                 Save User
               </button>
             </form>
           </PortalModal>
-        </div>
-      </section>
-
-      <section className="rounded-2xl bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold text-slate-900">Users</h2>
-        {usersLoadError ? (
-          <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-            {usersLoadError}
-          </p>
+        }
+      >
+        <ApiErrorNotice errors={usersLoadError ? [usersLoadError] : []} />
+        {actionError ? (
+          <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{actionError}</p>
         ) : null}
-        <form className="mt-3">
-          <input
-            name="q"
-            defaultValue={query}
-            placeholder="Search email, role, status, phone"
-            className="w-full max-w-md rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-          />
-        </form>
-        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-100">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-slate-500">
-              <tr>
-                <th className="pb-2">Email</th>
-                <th className="pb-2">Role</th>
-                <th className="pb-2">Status</th>
-                <th className="pb-2">Phone</th>
-                <th className="pb-2">Pay Rate (pence/hr)</th>
-                <th className="pb-2 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((user) => (
-                <tr key={user.id} className="border-t border-slate-100 align-top hover:bg-slate-50/70">
-                  <td className="py-2.5">
-                    <div>
-                      <p>{user.email}</p>
-                      <Link href={`/admin/users/${user.id}`} className="text-xs font-semibold text-lunar-700 hover:underline">
-                        HR profile
-                      </Link>
-                    </div>
-                  </td>
-                  <td className="py-2.5">
-                    <select
-                      form={`user-update-${user.id}`}
-                      name="role"
-                      defaultValue={user.role}
-                      className="rounded-md border border-slate-300 px-2 py-1 text-xs"
-                    >
-                      <option value="guard">guard</option>
-                      <option value="supervisor">supervisor</option>
-                      <option value="admin">admin</option>
-                    </select>
-                  </td>
-                  <td className="py-2.5">
-                    <select
-                      form={`user-update-${user.id}`}
-                      name="status"
-                      defaultValue={user.status}
-                      className="rounded-md border border-slate-300 px-2 py-1 text-xs"
-                    >
-                      <option value="active">active</option>
-                      <option value="invited">invited</option>
-                      <option value="suspended">suspended</option>
-                    </select>
-                  </td>
-                  <td className="py-2.5">
-                    <input
-                      form={`user-update-${user.id}`}
-                      name="phone"
-                      defaultValue={user.phone ?? ""}
-                      className="w-28 rounded-md border border-slate-300 px-2 py-1 text-xs"
-                    />
-                  </td>
-                  <td className="py-2.5">
-                    <input
-                      form={`user-update-${user.id}`}
-                      name="payRatePenceHour"
-                      type="number"
-                      min="0"
-                      placeholder="e.g. 1500"
-                      className="w-28 rounded-md border border-slate-300 px-2 py-1 text-xs"
-                    />
-                  </td>
-                  <td className="py-2.5 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <form id={`user-update-${user.id}`} action={updateUserAction}>
-                        <input type="hidden" name="id" value={String(user.id)} />
-                        <button className="rounded-md border border-lunar-200 px-3 py-1 text-xs font-semibold text-lunar-700 hover:bg-lunar-50">
-                          Save
-                        </button>
-                      </form>
-                      {user.status !== "suspended" ? (
-                        <form action={suspendAction}>
-                          <input type="hidden" name="id" value={String(user.id)} />
-                          <button className="rounded-md border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50">
-                            Suspend
-                          </button>
-                        </form>
-                      ) : (
-                        <span className="text-xs text-slate-400">No action</span>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="mt-4 flex items-center justify-between text-sm">
-          <p className="text-slate-500">
-            Showing {users.length} of {filtered.length} users
-          </p>
-          <div className="flex items-center gap-2">
-            <Link
-              href={`/admin/users?page=${Math.max(1, currentPage - 1)}&q=${encodeURIComponent(query)}`}
-              className={`rounded-md border px-3 py-1 ${currentPage <= 1 ? "pointer-events-none border-slate-200 text-slate-300" : "border-slate-300 text-slate-700 hover:bg-slate-50"}`}
-            >
-              Prev
-            </Link>
-            <span className="text-slate-600">
-              Page {currentPage} / {totalPages}
-            </span>
-            <Link
-              href={`/admin/users?page=${Math.min(totalPages, currentPage + 1)}&q=${encodeURIComponent(query)}`}
-              className={`rounded-md border px-3 py-1 ${currentPage >= totalPages ? "pointer-events-none border-slate-200 text-slate-300" : "border-slate-300 text-slate-700 hover:bg-slate-50"}`}
-            >
-              Next
-            </Link>
-          </div>
-        </div>
-      </section>
-    </div>
+        <PortalTableToolbar
+          basePath={BASE_PATH}
+          preserved={{ sort, dir }}
+          fields={[
+            { type: "search", placeholder: "Email, phone, role…", defaultValue: params.q ?? "" },
+            {
+              type: "select",
+              name: "role",
+              label: "Role",
+              defaultValue: roleFilter,
+              options: [
+                { value: "", label: "All roles" },
+                { value: "guard", label: "Guard" },
+                { value: "supervisor", label: "Supervisor" },
+                { value: "admin", label: "Admin" },
+              ],
+            },
+            {
+              type: "select",
+              name: "status",
+              label: "Status",
+              defaultValue: statusFilter,
+              options: [
+                { value: "", label: "All statuses" },
+                { value: "active", label: "Active" },
+                { value: "invited", label: "Invited" },
+                { value: "suspended", label: "Suspended" },
+              ],
+            },
+          ]}
+        />
+      </PortalPageHeader>
+
+      <PortalPageTableBody>
+        <PortalDataTable
+          basePath={BASE_PATH}
+          query={tableQuery}
+          columns={columns}
+          rows={users}
+          rowKey={(u) => u.id}
+          emptyMessage="No users match your filters."
+          page={currentPage}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          pageSize={PAGE_SIZE}
+          sort={sort}
+          dir={dir}
+          minWidth="56rem"
+          bulk={{
+            formId: "users-bulk-suspend",
+            action: bulkSuspendAction,
+            getRowId: (u) => u.id,
+            actions: [
+              {
+                label: "Suspend selected",
+                name: "bulkAction",
+                value: "suspend",
+                variant: "danger",
+                confirmMessage: "Suspend all selected users?",
+              },
+            ],
+          }}
+        />
+      </PortalPageTableBody>
+    </PortalPage>
   );
 }
-

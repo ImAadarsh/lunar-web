@@ -1,7 +1,9 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { ApiErrorNotice } from "@/components/portal/api-error-notice";
+import { PortalPage, PortalPageBody, PortalPageHeader } from "@/components/portal/portal-page-layout";
 import { apiErrorMessage, backendApiWithSession } from "@/lib/backend";
+import { formatUkTime } from "@/lib/format-datetime";
 import { getSessionFromCookies } from "@/lib/server-session";
 import { OperationsMap, type OpsMarker, type OpsTrail } from "@/components/operations/operations-map";
 import { AutoRefreshControl } from "@/components/operations/auto-refresh-control";
@@ -189,18 +191,18 @@ export default async function ManagerCommandCenterPage({ searchParams }: Command
   }
 
   return (
-    <div className="space-y-4">
-      <ApiErrorNotice errors={loadErrors} />
-      <section className="rounded-2xl bg-white p-5 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-lg font-semibold text-slate-900">Filters</h2>
-          <AutoRefreshControl />
-        </div>
-        <form className="mt-3 grid gap-2 md:grid-cols-5">
+    <PortalPage>
+      <PortalPageHeader
+        title="Command center"
+        description="Live map, telemetry, and operational feeds across your sites."
+        actions={<AutoRefreshControl />}
+      >
+        <ApiErrorNotice errors={loadErrors} />
+        <form method="get" className="grid gap-2 md:grid-cols-5">
           <select
             name="siteId"
             defaultValue={siteId ? String(siteId) : ""}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+            className="lunar-input"
           >
             <option value="">All sites</option>
             {sites.map((site) => (
@@ -212,7 +214,7 @@ export default async function ManagerCommandCenterPage({ searchParams }: Command
           <select
             name="shiftStatus"
             defaultValue={shiftStatus}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+            className="lunar-input"
           >
             <option value="active">active shifts</option>
             <option value="scheduled">scheduled shifts</option>
@@ -222,7 +224,7 @@ export default async function ManagerCommandCenterPage({ searchParams }: Command
           <select
             name="incidentStatus"
             defaultValue={incidentStatus}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+            className="lunar-input"
           >
             <option value="open">open incidents</option>
             <option value="in_review">in_review incidents</option>
@@ -231,7 +233,7 @@ export default async function ManagerCommandCenterPage({ searchParams }: Command
           <select
             name="sosStatus"
             defaultValue={sosStatus}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+            className="lunar-input"
           >
             <option value="active">active SOS</option>
             <option value="acknowledged">acknowledged SOS</option>
@@ -240,7 +242,7 @@ export default async function ManagerCommandCenterPage({ searchParams }: Command
           <select
             name="hours"
             defaultValue={String(hours)}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+            className="lunar-input"
           >
             <option value="1">Last 1h</option>
             <option value="6">Last 6h</option>
@@ -260,16 +262,18 @@ export default async function ManagerCommandCenterPage({ searchParams }: Command
             </Link>
           </div>
         </form>
-      </section>
+      </PortalPageHeader>
 
-      <section className="grid gap-3 md:grid-cols-4">
+      <PortalPageBody card={false}>
+        <div className="space-y-4">
+          <section className="grid gap-3 md:grid-cols-4">
         <Stat title="On-duty guards" value={kpisRes.data?.onDutyGuards ?? activeShifts.length} />
         <Stat title="Open incidents" value={kpisRes.data?.openIncidents ?? openIncidents.length} />
         <Stat title="Live SOS" value={kpisRes.data?.activeSos ?? sosEvents.length} />
         <Stat title="Missed checkpoints" value={kpisRes.data?.missedCheckpointsEstimate ?? 0} />
       </section>
 
-      <section className="rounded-2xl bg-white p-5 shadow-sm">
+      <section className="lunar-card lunar-card-pad">
         <h2 className="text-lg font-semibold text-slate-900">Real-time command center map</h2>
         <p className="text-sm text-slate-500">
           Live guard telemetry, GPS trails, active shifts, open incidents, and SOS coordinates.
@@ -284,11 +288,13 @@ export default async function ManagerCommandCenterPage({ searchParams }: Command
           <FeedCard title="Active shifts" items={activeShifts.map((s) => `Shift #${s.id} • Guard ${s.userId} • Site ${s.siteId}`)} />
           <FeedCard title="Open incidents" items={openIncidents.map((i) => `Incident #${i.id} • Site ${i.siteId} • ${i.title}`)} />
           <FeedCard title="SOS queue" items={sosEvents.map((e) => `SOS #${e.id} • Guard ${e.userId} • ${e.status}`)} />
-          <FeedCard title="Live telemetry" items={telemetry.map((p) => `Guard ${p.userId} • Shift ${p.shiftId} • ${new Date(p.recordedAt).toLocaleTimeString()}`)} />
+          <FeedCard title="Live telemetry" items={telemetry.map((p) => `Guard ${p.userId} • Shift ${p.shiftId} • ${formatUkTime(p.recordedAt)}`)} />
         </div>
-        <CommandEventFeed initialEvents={eventsRes.data?.items ?? []} siteId={siteId || null} />
-      </section>
-    </div>
+            <CommandEventFeed initialEvents={eventsRes.data?.items ?? []} siteId={siteId || null} />
+          </section>
+        </div>
+      </PortalPageBody>
+    </PortalPage>
   );
 }
 
@@ -303,8 +309,8 @@ function Stat({ title, value }: { title: string; value: string | number }) {
 
 function FeedCard({ title, items }: { title: string; items: string[] }) {
   return (
-    <article className="rounded-2xl bg-white p-5 shadow-sm">
-      <h3 className="text-base font-semibold text-slate-900">{title}</h3>
+    <article className="lunar-card lunar-card-pad">
+      <h3 className="portal-section-title">{title}</h3>
       {items.length === 0 ? (
         <p className="mt-2 text-sm text-slate-500">No entries.</p>
       ) : (

@@ -3,8 +3,16 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { CheckpointPlaceFields } from "@/components/checkpoints/checkpoint-place-fields";
 import { ApiErrorNotice } from "@/components/portal/api-error-notice";
+import {
+  PortalPage,
+  PortalPageBody,
+  PortalPageHeader,
+  PortalPageTableBody,
+} from "@/components/portal/portal-page-layout";
 import { PortalModal } from "@/components/portal/portal-modal";
+import { PortalTableToolbar } from "@/components/portal/portal-table-toolbar";
 import { apiErrorMessage, backendApiWithSession } from "@/lib/backend";
+import { filterByQuery } from "@/lib/portal-table";
 import { mutateBackend } from "@/lib/portal-mutations";
 import { getSessionFromCookies } from "@/lib/server-session";
 import { CheckpointQrClient } from "@/components/checkpoints/checkpoint-qr-client";
@@ -15,7 +23,7 @@ type CheckpointResponse = {
 };
 
 type CheckpointsPageProps = {
-  searchParams: Promise<{ siteId?: string; qr?: string }>;
+  searchParams: Promise<{ siteId?: string; qr?: string; q?: string }>;
 };
 
 export default async function AdminCheckpointsPage({ searchParams }: CheckpointsPageProps) {
@@ -24,13 +32,18 @@ export default async function AdminCheckpointsPage({ searchParams }: Checkpoints
   if (session.user.role !== "admin") redirect("/forbidden");
 
   const params = await searchParams;
-  const sitesRes = await backendApiWithSession<SitesResponse>("/sites", session);
+  const sitesRes = await backendApiWithSession<SitesResponse>("/sites?limit=200", session);
   const sites = sitesRes.data?.items ?? [];
   const siteId = Number(params.siteId) || sites[0]?.id;
+  const selectedSite = sites.find((s) => s.id === siteId);
   const checkpointsRes = siteId
     ? await backendApiWithSession<CheckpointResponse>(`/sites/${siteId}/checkpoints`, session)
     : null;
-  const checkpoints = checkpointsRes?.data?.items ?? [];
+  const allCheckpoints = checkpointsRes?.data?.items ?? [];
+  const searchQuery = (params.q ?? "").trim();
+  const checkpoints = filterByQuery(allCheckpoints, searchQuery, (cp) =>
+    [cp.label, cp.qrCode, String(cp.lat), String(cp.lng), String(cp.sortOrder)].join(" "),
+  );
   const loadErrors = [
     apiErrorMessage("Sites", sitesRes),
     apiErrorMessage("Checkpoints", checkpointsRes),
@@ -78,124 +91,152 @@ export default async function AdminCheckpointsPage({ searchParams }: Checkpoints
     revalidatePath(`/admin/checkpoints?siteId=${sid}`);
   }
 
+  const headerActions = siteId ? (
+    <PortalModal
+      triggerLabel="Add Checkpoint"
+      title="Add checkpoint"
+      description="Set the QR payload and coordinates for this patrol point."
+      triggerClassName="lunar-btn-primary lunar-btn-sm"
+    >
+      <form action={createCheckpointAction} className="space-y-3">
+        <input type="hidden" name="siteId" value={String(siteId)} />
+        <CheckpointPlaceFields />
+        <input
+          name="qrCode"
+          placeholder="Optional QR payload (default: auto = checkpoint ID)"
+          className="lunar-input"
+        />
+        <input name="sortOrder" type="number" placeholder="Sort order (default 0)" className="lunar-input" />
+        <button className="lunar-btn-primary w-full">Save Checkpoint</button>
+      </form>
+    </PortalModal>
+  ) : null;
+
   return (
-    <div className="space-y-4">
-      <section className="rounded-2xl bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold text-slate-900">Checkpoint management</h2>
-        <p className="text-sm text-slate-500">Select a site to manage patrol QR checkpoints.</p>
-        <div className="mt-3">
-          <ApiErrorNotice errors={loadErrors} />
-        </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {sites.map((site) => (
-            <Link
-              key={site.id}
-              href={`/admin/checkpoints?siteId=${site.id}`}
-              className={`rounded-md px-3 py-1.5 text-sm font-medium ${site.id === siteId ? "bg-lunar-700 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
-            >
-              {site.name}
-            </Link>
-          ))}
-        </div>
-      </section>
+    <PortalPage>
+      <PortalPageHeader
+        title="Checkpoint management"
+        description={
+          selectedSite
+            ? `${checkpoints.length} of ${allCheckpoints.length} checkpoint${allCheckpoints.length === 1 ? "" : "s"} · ${selectedSite.name}`
+            : "Select a site to manage patrol QR checkpoints."
+        }
+        actions={headerActions}
+      >
+        <ApiErrorNotice errors={loadErrors} />
+        {siteId ? (
+          <PortalTableToolbar
+            basePath="/admin/checkpoints"
+            preserved={{ siteId: String(siteId) }}
+            resetHref={`/admin/checkpoints?siteId=${siteId}`}
+            fields={[
+              {
+                type: "search",
+                placeholder: "Search label, QR code, coordinates…",
+                defaultValue: searchQuery,
+              },
+              {
+                type: "select",
+                name: "siteId",
+                label: "Site",
+                defaultValue: String(siteId),
+                options: sites.map((site) => ({ value: String(site.id), label: site.name })),
+              },
+            ]}
+          />
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {sites.map((site) => (
+              <Link
+                key={site.id}
+                href={`/admin/checkpoints?siteId=${site.id}`}
+                className="rounded-md bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-200"
+              >
+                {site.name}
+              </Link>
+            ))}
+          </div>
+        )}
+      </PortalPageHeader>
 
       {siteId ? (
-        <div className="grid gap-4 2xl:grid-cols-[420px_1fr]">
-          <section className="rounded-2xl bg-white p-5 shadow-sm">
-            <h3 className="text-base font-semibold text-slate-900">Add checkpoint</h3>
-            <p className="mt-1 text-sm text-slate-500">Create QR scan points for the selected site.</p>
-            <div className="mt-3">
-              <PortalModal
-                triggerLabel="Add Checkpoint"
-                title="Add checkpoint"
-                description="Set the QR payload and coordinates for this patrol point."
-                triggerClassName="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800"
-              >
-                <form action={createCheckpointAction} className="space-y-3">
-                  <input type="hidden" name="siteId" value={String(siteId)} />
-                  <CheckpointPlaceFields />
-                  <input
-                    name="qrCode"
-                    placeholder="Optional QR payload (default: auto = checkpoint ID)"
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-                  />
-                  <input
-                    name="sortOrder"
-                    type="number"
-                    placeholder="Sort order (default 0)"
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
-                  />
-                  <button className="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800">
-                    Save Checkpoint
-                  </button>
-                </form>
-              </PortalModal>
-            </div>
-          </section>
-
-          <section className="rounded-2xl bg-white p-5 shadow-sm">
-            <h3 className="text-base font-semibold text-slate-900">Checkpoints</h3>
-            <div className="mt-3 overflow-x-auto rounded-xl border border-slate-100">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 text-slate-500">
-                  <tr>
-                    <th className="pb-2">Label</th>
-                    <th className="pb-2">QR</th>
-                    <th className="pb-2">Location</th>
-                    <th className="pb-2">Sort</th>
-                    <th className="pb-2 text-right">Actions</th>
+        <PortalPageTableBody>
+            <div className="lunar-table-wrap min-h-0 flex-1 overflow-auto rounded-none border-0 bg-transparent">
+              <table className="w-full min-w-[720px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <th className="px-3 py-3">Label</th>
+                    <th className="px-3 py-3">QR code</th>
+                    <th className="px-3 py-3">Latitude</th>
+                    <th className="px-3 py-3">Longitude</th>
+                    <th className="px-3 py-3">Sort</th>
+                    <th className="px-3 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
+                  {checkpoints.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-3 py-10 text-center text-slate-500">
+                        {allCheckpoints.length === 0
+                          ? "No checkpoints for this site yet."
+                          : "No checkpoints match your search."}
+                      </td>
+                    </tr>
+                  ) : null}
                   {checkpoints.map((cp) => (
-                    <tr key={cp.id} className="border-t border-slate-100 align-top hover:bg-slate-50/70">
-                      <td className="py-2.5">
+                    <tr key={cp.id} className="border-b border-slate-100 align-top last:border-0 hover:bg-slate-50/60">
+                      <td className="px-3 py-3">
                         <input
                           form={`cp-update-${cp.id}`}
                           name="label"
                           defaultValue={cp.label}
-                          className="w-28 rounded-md border border-slate-300 px-2 py-1 text-xs"
+                          className="min-w-[10rem] lunar-input-sm"
+                          aria-label="Checkpoint label"
                         />
                       </td>
-                      <td className="py-2.5">
+                      <td className="px-3 py-3">
                         <input
                           form={`cp-update-${cp.id}`}
                           name="qrCode"
                           defaultValue={cp.qrCode}
-                          className="w-32 rounded-md border border-slate-300 px-2 py-1 text-xs"
+                          className="min-w-[9rem] font-mono text-xs lunar-input-sm"
+                          aria-label="QR code"
                         />
                       </td>
-                      <td className="py-2.5">
-                        <div className="flex gap-1">
-                          <input
-                            form={`cp-update-${cp.id}`}
-                            name="lat"
-                            type="number"
-                            step="any"
-                            defaultValue={cp.lat}
-                            className="w-20 rounded-md border border-slate-300 px-2 py-1 text-xs"
-                          />
-                          <input
-                            form={`cp-update-${cp.id}`}
-                            name="lng"
-                            type="number"
-                            step="any"
-                            defaultValue={cp.lng}
-                            className="w-20 rounded-md border border-slate-300 px-2 py-1 text-xs"
-                          />
-                        </div>
+                      <td className="px-3 py-3">
+                        <input
+                          form={`cp-update-${cp.id}`}
+                          name="lat"
+                          type="number"
+                          step="any"
+                          defaultValue={cp.lat}
+                          className="w-28 tabular-nums lunar-input-sm"
+                          aria-label="Latitude"
+                        />
                       </td>
-                      <td className="py-2.5">
+                      <td className="px-3 py-3">
+                        <input
+                          form={`cp-update-${cp.id}`}
+                          name="lng"
+                          type="number"
+                          step="any"
+                          defaultValue={cp.lng}
+                          className="w-28 tabular-nums lunar-input-sm"
+                          aria-label="Longitude"
+                        />
+                      </td>
+                      <td className="px-3 py-3">
                         <input
                           form={`cp-update-${cp.id}`}
                           name="sortOrder"
                           type="number"
                           defaultValue={cp.sortOrder}
-                          className="w-16 rounded-md border border-slate-300 px-2 py-1 text-xs"
+                          className="w-16 lunar-input-sm"
+                          aria-label="Sort order"
                         />
                       </td>
-                      <td className="py-2.5 text-right">
-                        <div className="flex items-center justify-end gap-2">
+                      <td className="px-3 py-3 text-right">
+                        <div className="flex flex-wrap items-center justify-end gap-2">
                           <Link
                             href={`/admin/checkpoints?siteId=${siteId}&qr=${cp.id}`}
                             className="rounded-md border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
@@ -223,15 +264,14 @@ export default async function AdminCheckpointsPage({ searchParams }: Checkpoints
                 </tbody>
               </table>
             </div>
-          </section>
-        </div>
+        </PortalPageTableBody>
       ) : (
-        <section className="rounded-2xl bg-white p-5 shadow-sm text-sm text-slate-500">
-          No sites found. Create a site first in Admin &gt; Sites.
-        </section>
+        <PortalPageBody padded>
+          <p className="text-sm text-slate-500">No sites found. Create a site first in Admin &gt; Sites.</p>
+        </PortalPageBody>
       )}
       {siteId ? <CheckpointQrClient siteId={siteId} checkpoints={checkpoints} /> : null}
-    </div>
+    </PortalPage>
   );
 }
 

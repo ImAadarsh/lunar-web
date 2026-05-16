@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { formatUkDateTime } from "@/lib/format-datetime";
+import { ModalPortal, useBodyScrollLock } from "@/components/ui/modal-portal";
 
 type IncidentAttachment = {
   id: number;
@@ -28,6 +30,8 @@ export function AttachmentGallery({
 }: AttachmentGalleryProps) {
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   const selected = selectedIdx === null ? null : attachments[selectedIdx];
+
+  useBodyScrollLock(selectedIdx !== null);
   const hasMultiple = attachments.length > 1;
 
   const metadata = useMemo(() => {
@@ -39,7 +43,7 @@ export function AttachmentGallery({
       `MIME: ${selected.mime || "unknown"}`,
       `Storage key: ${selected.storageKey || "n/a"}`,
       `Size: ${selected.sizeBytes ? `${selected.sizeBytes} bytes` : "n/a"}`,
-      `Created: ${selected.createdAt ? new Date(selected.createdAt).toLocaleString() : "n/a"}`,
+      `Created: ${selected.createdAt ? formatUkDateTime(selected.createdAt) : "n/a"}`,
     ];
   }, [selected]);
 
@@ -102,8 +106,20 @@ export function AttachmentGallery({
       </div>
 
       {selected ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4">
-          <div className="w-full max-w-5xl rounded-2xl bg-white p-4 shadow-2xl">
+        <ModalPortal>
+          <div
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-md"
+            role="presentation"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setSelectedIdx(null);
+            }}
+          >
+          <div
+            className="w-full max-w-5xl rounded-2xl bg-white p-4 shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="mb-3 flex items-center justify-between">
               <p className="text-sm font-semibold text-slate-900">
                 Attachment #{selected.id} ({selectedIdx! + 1}/{attachments.length})
@@ -159,7 +175,8 @@ export function AttachmentGallery({
               </aside>
             </div>
           </div>
-        </div>
+          </div>
+        </ModalPortal>
       ) : null}
     </>
   );

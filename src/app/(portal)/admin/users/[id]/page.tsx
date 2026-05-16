@@ -3,7 +3,9 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { ApiErrorNotice } from "@/components/portal/api-error-notice";
 import { PortalModal } from "@/components/portal/portal-modal";
+import { PortalPage, PortalPageBody, PortalPageHeader } from "@/components/portal/portal-page-layout";
 import { apiErrorMessage, backendApiWithSession } from "@/lib/backend";
+import { formatUkDateOnly, formatUkDateTime } from "@/lib/format-datetime";
 import { mutateBackend } from "@/lib/portal-mutations";
 import { getSessionFromCookies } from "@/lib/server-session";
 
@@ -24,12 +26,18 @@ export default async function AdminUserHrPage({ params }: { params: Promise<{ id
   const profile = profileRes.data;
   if (!profileRes.ok) {
     return (
-      <div className="space-y-4">
-        <Link href="/admin/users" className="text-sm font-semibold text-lunar-700 hover:underline">
-          Back to users
-        </Link>
-        <ApiErrorNotice errors={[apiErrorMessage("HR profile", profileRes)]} />
-      </div>
+      <PortalPage>
+        <PortalPageHeader
+          title="HR profile"
+          actions={
+            <Link href="/admin/users" className="lunar-btn-secondary lunar-btn-sm">
+              Back to users
+            </Link>
+          }
+        >
+          <ApiErrorNotice errors={[apiErrorMessage("HR profile", profileRes)]} />
+        </PortalPageHeader>
+      </PortalPage>
     );
   }
   if (!profile) redirect("/admin/users");
@@ -78,19 +86,19 @@ export default async function AdminUserHrPage({ params }: { params: Promise<{ id
   }
 
   return (
-    <div className="space-y-4">
-      <Link href="/admin/users" className="text-sm font-semibold text-lunar-700 hover:underline">
-        Back to users
-      </Link>
-      <section className="rounded-2xl bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold text-slate-900">{profile.user.email}</h2>
-        <p className="text-sm text-slate-500">
-          {profile.user.role} • {profile.user.status} • {profile.user.phone ?? "no phone"}
-        </p>
-      </section>
-
-      <section className="grid gap-4 xl:grid-cols-3">
-        <article className="rounded-2xl bg-white p-5 shadow-sm">
+    <PortalPage>
+      <PortalPageHeader
+        title={profile.user.email}
+        description={`${profile.user.role} · ${profile.user.status} · ${profile.user.phone ?? "no phone"}`}
+        actions={
+          <Link href="/admin/users" className="lunar-btn-secondary lunar-btn-sm">
+            Back to users
+          </Link>
+        }
+      />
+      <PortalPageBody card={false}>
+        <section className="grid gap-4 xl:grid-cols-3">
+        <article className="lunar-card lunar-card-pad">
           <h3 className="font-semibold text-slate-900">HR documents</h3>
           <div className="mt-3">
             <PortalModal triggerLabel="Add Document" title="Add HR document" triggerClassName="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white">
@@ -111,7 +119,7 @@ export default async function AdminUserHrPage({ params }: { params: Promise<{ id
           </ul>
         </article>
 
-        <article className="rounded-2xl bg-white p-5 shadow-sm">
+        <article className="lunar-card lunar-card-pad">
           <h3 className="font-semibold text-slate-900">Emergency contacts</h3>
           <div className="mt-3">
             <PortalModal triggerLabel="Add Contact" title="Add emergency contact" triggerClassName="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white">
@@ -133,7 +141,7 @@ export default async function AdminUserHrPage({ params }: { params: Promise<{ id
           </ul>
         </article>
 
-        <article className="rounded-2xl bg-white p-5 shadow-sm">
+        <article className="lunar-card lunar-card-pad">
           <h3 className="font-semibold text-slate-900">Lifecycle</h3>
           <div className="mt-3">
             <PortalModal triggerLabel="Record Event" title="Record lifecycle event" triggerClassName="w-full rounded-lg bg-lunar-700 px-4 py-2 text-sm font-semibold text-white">
@@ -153,12 +161,14 @@ export default async function AdminUserHrPage({ params }: { params: Promise<{ id
           <ul className="mt-4 space-y-2 text-sm">
             {profile.lifecycle.map((event) => (
               <li key={event.id} className="rounded-lg border border-slate-100 p-2">
-                {event.eventType} • {event.effectiveOn ?? new Date(event.createdAt).toLocaleDateString()}
+                {event.eventType} •{" "}
+                {event.effectiveOn ? formatUkDateOnly(event.effectiveOn) : formatUkDateTime(event.createdAt)}
               </li>
             ))}
           </ul>
         </article>
-      </section>
-    </div>
+        </section>
+      </PortalPageBody>
+    </PortalPage>
   );
 }

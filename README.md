@@ -22,7 +22,7 @@ Role-based web dashboard for Lunar Security operations, connected to the existin
   - Staff: profile, own shifts, notifications
 - Expanded module screens with live API integration:
   - Admin: users, sites, checkpoints, payroll runs, report export jobs
-  - Manager: shift assignment, incidents/SOS status updates, leave approvals, certifications
+  - Manager: shift assignment, incidents/SOS status updates, leave approvals, guard site training
   - Staff: leave submission/cancel, incident creation, SOS trigger
 - Incident detail screens with attachment preview for Manager and Staff
 - Command center map page (`/manager/command-center`) for Admin/Manager roles

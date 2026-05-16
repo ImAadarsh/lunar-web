@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { formatUkDateTime } from "@/lib/format-datetime";
 
 type CommandEvent = {
   id: number;
@@ -52,10 +53,10 @@ export function CommandEventFeed({ initialEvents, siteId }: CommandEventFeedProp
   }, [latestId, siteId]);
 
   return (
-    <article className="rounded-2xl bg-white p-5 shadow-sm">
+    <article className="lunar-card lunar-card-pad">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h3 className="text-base font-semibold text-slate-900">Live command feed</h3>
+          <h3 className="portal-section-title">Live command feed</h3>
           <p className="text-sm text-slate-500">Polls backend command events every 5 seconds.</p>
         </div>
         <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">Live</span>
@@ -69,7 +70,7 @@ export function CommandEventFeed({ initialEvents, siteId }: CommandEventFeedProp
             <div key={event.id} className="rounded-xl border border-slate-100 p-3 text-sm">
               <div className="flex items-center justify-between gap-3">
                 <p className="font-semibold text-slate-900">{event.type}</p>
-                <p className="text-xs text-slate-500">{new Date(event.createdAt).toLocaleTimeString()}</p>
+                <p className="text-xs text-slate-500">{formatUkDateTime(event.createdAt)}</p>
               </div>
               <p className="mt-1 text-xs text-slate-500">
                 {event.entityType ?? "event"} #{event.entityId ?? event.id}

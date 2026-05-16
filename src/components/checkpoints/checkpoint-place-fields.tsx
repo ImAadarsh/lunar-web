@@ -37,7 +37,7 @@ export function CheckpointPlaceFields() {
       value={searchAddress}
       onChange={(event) => setSearchAddress(event.target.value)}
       placeholder="Search checkpoint address or place"
-      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+      className="lunar-input"
     />
   );
 
@@ -69,7 +69,7 @@ export function CheckpointPlaceFields() {
         value={label}
         onChange={(event) => setLabel(event.target.value)}
         placeholder="Checkpoint label"
-        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+        className="lunar-input"
       />
       <div className="grid grid-cols-2 gap-2">
         <input
@@ -80,7 +80,7 @@ export function CheckpointPlaceFields() {
           value={lat}
           onChange={(event) => setLat(event.target.value)}
           placeholder="Latitude"
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+          className="lunar-input"
         />
         <input
           name="lng"
@@ -90,7 +90,7 @@ export function CheckpointPlaceFields() {
           value={lng}
           onChange={(event) => setLng(event.target.value)}
           placeholder="Longitude"
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-lunar-400"
+          className="lunar-input"
         />
       </div>
       {key && isLoaded ? (

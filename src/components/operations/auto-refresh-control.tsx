@@ -36,7 +36,7 @@ export function AutoRefreshControl({ defaultSeconds = 0 }: AutoRefreshControlPro
       <select
         value={String(seconds)}
         onChange={(event) => setSeconds(Number(event.target.value))}
-        className="rounded-md border border-slate-300 px-2 py-1 text-xs outline-none focus:border-lunar-400"
+        className="lunar-input-sm outline-none focus:border-lunar-400"
       >
         <option value="0">Off</option>
         <option value="10">Every 10s</option>
