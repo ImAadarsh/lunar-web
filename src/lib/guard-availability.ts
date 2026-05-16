@@ -182,3 +182,36 @@ export function shiftDutyLabel(dutyState: string | null | undefined): string {
   if (!dutyState) return "—";
   return guardAvailabilityLabel(dutyState as GuardAvailabilityState);
 }
+
+const siteDutyBadgeClass: Partial<Record<GuardAvailabilityState, string>> = {
+  on_duty: "inline-flex rounded-full border border-sky-200 bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-800",
+  missed_duty:
+    "inline-flex rounded-full border border-rose-200 bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-800",
+  duty_not_started:
+    "inline-flex rounded-full border border-orange-200 bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-900",
+  assigned:
+    "inline-flex rounded-full border border-violet-200 bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-900",
+};
+
+/** Badge for trained-sites table when this site is the guard's current shift site. */
+export function trainedSiteDutyBadge(
+  siteId: number,
+  currentSiteId: number | null | undefined,
+  availability: GuardAvailabilityInfo,
+): { label: string; className: string } | null {
+  if (currentSiteId == null || siteId !== currentSiteId) return null;
+
+  const state = (availability.dutyState ?? availability.state) as GuardAvailabilityState;
+  if (!siteDutyBadgeClass[state]) return null;
+
+  const label =
+    state === "on_duty"
+      ? "On duty here"
+      : state === "missed_duty"
+        ? "Missed duty here"
+        : state === "duty_not_started"
+          ? "Duty not started here"
+          : "Assigned here";
+
+  return { label, className: siteDutyBadgeClass[state]! };
+}

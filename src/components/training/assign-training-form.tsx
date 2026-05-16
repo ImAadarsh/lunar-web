@@ -39,16 +39,24 @@ function MultiSelectPanel({
   return (
     <div className="flex min-h-0 flex-col">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-semibold text-slate-800">
+        <p className="text-sm font-semibold text-[var(--portal-text)]">
           {title}{" "}
-          <span className="font-normal text-slate-500">({selected.size} selected)</span>
+          <span className="font-normal text-[var(--portal-text-muted)]">({selected.size} selected)</span>
         </p>
         <div className="flex gap-1 text-xs">
-          <button type="button" onClick={onSelectAll} className="text-lunar-700 hover:underline">
+          <button
+            type="button"
+            onClick={onSelectAll}
+            className="font-medium text-[var(--portal-link)] hover:underline"
+          >
             All
           </button>
-          <span className="text-slate-300">|</span>
-          <button type="button" onClick={onClear} className="text-slate-600 hover:underline">
+          <span className="text-[var(--portal-border-strong)]">|</span>
+          <button
+            type="button"
+            onClick={onClear}
+            className="font-medium text-[var(--portal-text-muted)] hover:text-[var(--portal-text)] hover:underline"
+          >
             Clear
           </button>
         </div>
@@ -61,9 +69,9 @@ function MultiSelectPanel({
         className="mt-2 lunar-input-sm"
         aria-label={`Search ${title.toLowerCase()}`}
       />
-      <div className="mt-2 max-h-48 min-h-[8rem] flex-1 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50/50 p-2">
+      <div className="mt-2 max-h-48 min-h-[8rem] flex-1 overflow-y-auto rounded-xl border border-[var(--portal-border)] bg-[var(--portal-surface-muted)] p-2">
         {options.length === 0 ? (
-          <p className="px-2 py-4 text-center text-sm text-slate-500">{emptyMessage}</p>
+          <p className="px-2 py-4 text-center text-sm text-[var(--portal-text-muted)]">{emptyMessage}</p>
         ) : (
           <ul className="space-y-0.5">
             {options.map((opt) => {
@@ -73,14 +81,16 @@ function MultiSelectPanel({
                   <label
                     className={cn(
                       "flex cursor-pointer items-start gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors",
-                      checked ? "bg-lunar-50 text-lunar-900" : "hover:bg-white"
+                      checked
+                        ? "border border-[var(--portal-accent)]/35 bg-[var(--portal-accent)]/15 text-[var(--portal-text)]"
+                        : "border border-transparent text-[var(--portal-text)] hover:bg-[var(--portal-table-row-hover)]",
                     )}
                   >
                     <input
                       type="checkbox"
                       checked={checked}
                       onChange={() => onToggle(opt.id)}
-                      className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-lunar-700 focus:ring-lunar-400/30"
+                      className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--portal-input-border)] text-[var(--portal-accent)] focus:ring-[var(--portal-focus-ring)]"
                     />
                     <span className="leading-snug">{opt.label}</span>
                   </label>
@@ -192,11 +202,11 @@ export function AssignTrainingForm({ guards, sites, assignAction }: AssignTraini
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="block text-sm text-slate-600">
+        <label className="block text-sm text-[var(--portal-text-muted)]">
           Trained on
           <input name="trainedOn" type="date" className="mt-1 w-full lunar-input" />
         </label>
-        <label className="block text-sm text-slate-600">
+        <label className="block text-sm text-[var(--portal-text-muted)]">
           Notes
           <input name="notes" placeholder="Optional" className="mt-1 w-full lunar-input" />
         </label>
@@ -211,7 +221,7 @@ export function AssignTrainingForm({ guards, sites, assignAction }: AssignTraini
         </p>
       ) : null}
 
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-[var(--portal-text-muted)]">
         {pairCount > 0
           ? `Creates one assignment per guard–site pair (${pairCount} total). Existing pairs are skipped.`
           : "Select guards and sites to see how many assignments will be created."}

@@ -44,6 +44,7 @@ export function webRoleLabel(role: BackendRole): "Admin" | "Manager" | "Staff" {
 }
 
 export function canAccessPath(role: BackendRole, pathname: string): boolean {
+  if (pathname === "/profile" || pathname.startsWith("/profile/")) return true;
   if (pathname.startsWith("/admin")) return role === "admin";
   if (pathname.startsWith("/manager")) return role === "admin" || role === "supervisor";
   if (pathname.startsWith("/staff")) return role === "guard";

@@ -615,18 +615,37 @@
     color: var(--portal-sidebar-text);
   }
 
-  .portal-sidebar-user-label {
-    @apply text-xs font-medium uppercase tracking-wider;
-    color: var(--portal-sidebar-text-muted);
+  .portal-sidebar-user-card--link:not(.portal-sidebar-user-card--collapsed) {
+    @apply py-2;
+  }
+
+  .portal-sidebar-user-card--link {
+    @apply block no-underline transition-colors;
+    background: var(--portal-sidebar-user-bg);
+  }
+
+  .portal-sidebar-user-card--link:hover {
+    background: var(--portal-sidebar-nav-hover-bg);
+    color: var(--portal-sidebar-nav-hover-text);
+  }
+
+  .portal-sidebar-user-card--active {
+    background: var(--portal-sidebar-nav-active-bg);
+    color: var(--portal-sidebar-nav-active-text);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  }
+
+  .portal-sidebar-user-line {
+    @apply flex min-w-0 items-center gap-2;
   }
 
   .portal-sidebar-user-email {
-    @apply mt-1 truncate font-semibold;
+    @apply min-w-0 flex-1 truncate font-semibold leading-tight;
     color: var(--portal-sidebar-text);
   }
 
   .portal-sidebar-user-role {
-    @apply mt-0.5 inline-flex rounded-md px-2 py-0.5 text-xs font-semibold;
+    @apply inline-flex shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold leading-none;
     background: var(--portal-sidebar-user-role-bg);
     color: var(--portal-sidebar-user-role-text);
   }
@@ -1214,6 +1233,38 @@
   [data-portal-theme="dark"] a.text-lunar-700:hover,
   [data-portal-theme="dark"] a.text-lunar-800:hover {
     color: var(--portal-link-hover) !important;
+  }
+
+  /* Google Maps InfoWindow is always a white panel — keep dark readable text in portal dark/coloured themes */
+  [data-portal-theme="dark"] .ops-map-infowindow,
+  [data-portal-theme="coloured"] .ops-map-infowindow {
+    color: #0f172a !important;
+    background-color: #ffffff;
+  }
+
+  [data-portal-theme="dark"] .ops-map-infowindow .ops-map-infowindow__title,
+  [data-portal-theme="coloured"] .ops-map-infowindow .ops-map-infowindow__title {
+    color: #0f172a !important;
+  }
+
+  [data-portal-theme="dark"] .ops-map-infowindow .ops-map-infowindow__label,
+  [data-portal-theme="coloured"] .ops-map-infowindow .ops-map-infowindow__label {
+    color: #64748b !important;
+  }
+
+  [data-portal-theme="dark"] .ops-map-infowindow .ops-map-infowindow__value,
+  [data-portal-theme="coloured"] .ops-map-infowindow .ops-map-infowindow__value {
+    color: #1e293b !important;
+  }
+
+  [data-portal-theme="dark"] .ops-map-infowindow a.ops-map-infowindow__link,
+  [data-portal-theme="coloured"] .ops-map-infowindow a.ops-map-infowindow__link {
+    color: #194c6b !important;
+  }
+
+  [data-portal-theme="dark"] .ops-map-infowindow a.ops-map-infowindow__link:hover,
+  [data-portal-theme="coloured"] .ops-map-infowindow a.ops-map-infowindow__link:hover {
+    color: #0f2d42 !important;
   }
 
   [data-portal-theme="coloured"] .text-slate-900,

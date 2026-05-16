@@ -3,18 +3,31 @@ import Link from "next/link";
 import { ApiErrorNotice } from "@/components/portal/api-error-notice";
 import { PortalPage, PortalPageBody, PortalPageHeader } from "@/components/portal/portal-page-layout";
 import { apiErrorMessage, backendApiWithSession } from "@/lib/backend";
-import { formatUkTime } from "@/lib/format-datetime";
+import { formatUkDateTime, formatUkTime } from "@/lib/format-datetime";
 import { getSessionFromCookies } from "@/lib/server-session";
 import { OperationsMap, type OpsMarker, type OpsTrail } from "@/components/operations/operations-map";
 import { AutoRefreshControl } from "@/components/operations/auto-refresh-control";
 import { CommandEventFeed } from "@/components/operations/command-event-feed";
+import { CommandCenterFilters } from "@/components/operations/command-center-filters";
+import { CommandOperationsFeedsTabs } from "@/components/operations/command-operations-feeds-tabs";
 
 type SiteList = {
   items: Array<{ id: number; name: string; centerLat: number; centerLng: number }>;
 };
 
 type ShiftList = {
-  items: Array<{ id: number; siteId: number; userId: number; status: string; startsAt: string }>;
+  items: Array<{
+    id: number;
+    siteId: number;
+    userId: number;
+    status: string;
+    startsAt: string;
+    endsAt: string;
+    siteName?: string | null;
+    userEmail?: string | null;
+    guardName?: string | null;
+    dutyState?: string | null;
+  }>;
 };
 
 type IncidentList = {
@@ -43,12 +56,6 @@ type CommandEventList = {
     payload?: unknown;
     createdAt: string;
   }>;
-};
-type KpiSummary = {
-  onDutyGuards: number;
-  openIncidents: number;
-  activeSos: number;
-  missedCheckpointsEstimate: number;
 };
 type TelemetryLatest = {
   items: Array<{
@@ -84,47 +91,57 @@ export default async function ManagerCommandCenterPage({ searchParams }: Command
   const incidentStatus = (params.incidentStatus ?? "open").trim();
   const sosStatus = (params.sosStatus ?? "active").trim();
   const hours = Math.max(1, Number(params.hours ?? "24") || 24);
-  const cutoff = Date.now() - hours * 60 * 60 * 1000;
+  const now = Date.now();
+  const msWindow = hours * 60 * 60 * 1000;
+  const upcomingShifts = shiftStatus === "scheduled";
+  /** Incidents / SOS always use a look-back window. */
+  const pastCutoff = now - msWindow;
+  const shiftPeriodFrom = upcomingShifts ? new Date(now).toISOString() : new Date(pastCutoff).toISOString();
+  const shiftPeriodTo = upcomingShifts ? new Date(now + msWindow).toISOString() : new Date(now).toISOString();
+
+  const shiftQuery = new URLSearchParams({ from: shiftPeriodFrom, to: shiftPeriodTo });
+  if (shiftStatus) shiftQuery.set("status", shiftStatus);
+  if (siteId) shiftQuery.set("siteId", String(siteId));
+
+  const incidentQuery = new URLSearchParams({ limit: "200" });
+  if (incidentStatus) incidentQuery.set("status", incidentStatus);
+  if (siteId) incidentQuery.set("siteId", String(siteId));
 
   const commandParams = new URLSearchParams({ limit: "30" });
   if (siteId) commandParams.set("siteId", String(siteId));
-  const [sitesRes, shiftsRes, incidentsRes, sosRes, eventsRes, kpisRes, telemetryRes] = await Promise.all([
+
+  const [sitesRes, shiftsRes, incidentsRes, sosRes, eventsRes, telemetryRes] = await Promise.all([
     backendApiWithSession<SiteList>("/sites", session),
-    backendApiWithSession<ShiftList>(
-      `/shifts${shiftStatus ? `?status=${encodeURIComponent(shiftStatus)}${siteId ? `&siteId=${siteId}` : ""}` : ""}`,
-      session
-    ),
-    backendApiWithSession<IncidentList>(
-      `/incidents${incidentStatus ? `?status=${encodeURIComponent(incidentStatus)}${siteId ? `&siteId=${siteId}` : ""}` : ""}`,
-      session
-    ),
+    backendApiWithSession<ShiftList>(`/shifts?${shiftQuery.toString()}`, session),
+    backendApiWithSession<IncidentList>(`/incidents?${incidentQuery.toString()}`, session),
     backendApiWithSession<SosList>("/sos", session),
     backendApiWithSession<CommandEventList>(`/command/events?${commandParams.toString()}`, session),
-    backendApiWithSession<KpiSummary>("/dashboard/kpis", session),
     backendApiWithSession<TelemetryLatest>("/telemetry/latest", session),
   ]);
 
   const sites = sitesRes.data?.items ?? [];
   const siteMap = new Map(sites.map((site) => [site.id, site] as const));
-  const activeShifts = (shiftsRes.data?.items ?? []).filter((shift) => {
-    const inWindow = new Date(shift.startsAt).getTime() >= cutoff;
-    return inWindow;
-  });
+  const filteredShifts = shiftsRes.data?.items ?? [];
   const openIncidents = (incidentsRes.data?.items ?? []).filter((incident) => {
-    const inWindow = new Date(incident.createdAt).getTime() >= cutoff;
+    const inWindow = new Date(incident.createdAt).getTime() >= pastCutoff;
     return inWindow;
   });
   const sosEvents = (sosRes.data?.items ?? []).filter((event) => {
     const matchesStatus = sosStatus ? event.status === sosStatus : true;
-    const inWindow = new Date(event.createdAt).getTime() >= cutoff;
+    const inWindow = new Date(event.createdAt).getTime() >= pastCutoff;
     return matchesStatus && inWindow;
   });
-  const telemetry = (telemetryRes.data?.items ?? []).filter((point) => {
+  const telemetryAll = (telemetryRes.data?.items ?? []).filter((point) => {
     const matchesSite = siteId ? point.siteId === siteId : true;
-    const inWindow = new Date(point.recordedAt).getTime() >= cutoff;
+    const inWindow = new Date(point.recordedAt).getTime() >= pastCutoff;
     return matchesSite && inWindow;
   });
-  const primaryShiftId = telemetry[0]?.shiftId ?? activeShifts[0]?.id ?? null;
+  const filteredShiftIds = new Set(filteredShifts.map((s) => s.id));
+  const telemetry =
+    shiftStatus === "active"
+      ? telemetryAll
+      : telemetryAll.filter((p) => filteredShiftIds.has(p.shiftId));
+  const primaryShiftId = telemetry[0]?.shiftId ?? filteredShifts[0]?.id ?? null;
   const trailRes = primaryShiftId
     ? await backendApiWithSession<TelemetryTrail>(`/telemetry/trails?shiftId=${primaryShiftId}`, session)
     : null;
@@ -143,21 +160,37 @@ export default async function ManagerCommandCenterPage({ searchParams }: Command
     apiErrorMessage("Incidents", incidentsRes),
     apiErrorMessage("SOS events", sosRes),
     apiErrorMessage("Command events", eventsRes),
-    apiErrorMessage("Dashboard KPIs", kpisRes),
     apiErrorMessage("Live telemetry", telemetryRes),
     apiErrorMessage("Telemetry trail", trailRes),
   ];
 
+  const shiftStatLabel = shiftStatusLabel(shiftStatus);
+  const incidentStatLabel = incidentStatusLabel(incidentStatus);
+  const sosStatLabel = sosStatusLabel(sosStatus);
+
   const markers: OpsMarker[] = [];
-  for (const shift of activeShifts) {
+  for (const shift of filteredShifts) {
     const site = siteMap.get(shift.siteId);
     if (!site) continue;
+    const guardLabel = shift.guardName?.trim() || shift.userEmail || `Guard ${shift.userId}`;
+    const siteLabel = shift.siteName?.trim() || site.name;
     markers.push({
       id: `shift-${shift.id}`,
       lat: Number(site.centerLat),
       lng: Number(site.centerLng),
-      label: `Shift #${shift.id}`,
+      label: String(shift.id),
       type: "shift",
+      title: `Shift #${shift.id}`,
+      details: [
+        { label: "Status", value: shift.status },
+        ...(shift.dutyState ? [{ label: "Duty", value: shift.dutyState.replace(/_/g, " ") }] : []),
+        { label: "Site", value: siteLabel },
+        { label: "Guard", value: guardLabel },
+        { label: "Starts", value: formatUkDateTime(shift.startsAt) },
+        { label: "Ends", value: formatUkDateTime(shift.endsAt) },
+      ],
+      actionHref: `/manager/guards/${shift.userId}`,
+      actionLabel: "Open guard dashboard",
     });
   }
   for (const incident of openIncidents) {
@@ -167,8 +200,17 @@ export default async function ManagerCommandCenterPage({ searchParams }: Command
       id: `incident-${incident.id}`,
       lat: Number(site.centerLat),
       lng: Number(site.centerLng),
-      label: `Incident #${incident.id}`,
+      label: String(incident.id),
       type: "incident",
+      title: incident.title,
+      details: [
+        { label: "Incident", value: `#${incident.id}` },
+        { label: "Status", value: incident.status },
+        { label: "Site", value: site.name },
+        { label: "Reported", value: formatUkDateTime(incident.createdAt) },
+      ],
+      actionHref: `/manager/incidents/${incident.id}`,
+      actionLabel: "Open incident",
     });
   }
   for (const event of sosEvents) {
@@ -176,17 +218,36 @@ export default async function ManagerCommandCenterPage({ searchParams }: Command
       id: `sos-${event.id}`,
       lat: Number(event.lat),
       lng: Number(event.lng),
-      label: `SOS #${event.id}`,
+      label: String(event.id),
       type: "sos",
+      title: `SOS #${event.id}`,
+      details: [
+        { label: "Status", value: event.status },
+        { label: "Guard", value: `User ${event.userId}` },
+        { label: "Location", value: `${event.lat.toFixed(5)}, ${event.lng.toFixed(5)}` },
+        { label: "Raised", value: formatUkDateTime(event.createdAt) },
+      ],
+      actionHref: "/manager/incidents",
+      actionLabel: "Incidents & SOS",
     });
   }
   for (const point of telemetry) {
+    const site = siteMap.get(point.siteId);
     markers.push({
-      id: `telemetry-${point.userId}`,
+      id: `telemetry-${point.userId}-${point.shiftId}`,
       lat: Number(point.lat),
       lng: Number(point.lng),
-      label: `Guard ${point.userId}`,
+      label: String(point.userId),
       type: "telemetry",
+      title: point.email || `Guard ${point.userId}`,
+      details: [
+        { label: "Shift", value: `#${point.shiftId}` },
+        { label: "Site", value: site?.name ?? `Site ${point.siteId}` },
+        ...(point.accuracyM != null ? [{ label: "GPS accuracy", value: `${Math.round(point.accuracyM)} m` }] : []),
+        { label: "Recorded", value: formatUkTime(point.recordedAt) },
+      ],
+      actionHref: `/manager/guards/${point.userId}`,
+      actionLabel: "Open guard dashboard",
     });
   }
 
@@ -198,104 +259,96 @@ export default async function ManagerCommandCenterPage({ searchParams }: Command
         actions={<AutoRefreshControl />}
       >
         <ApiErrorNotice errors={loadErrors} />
-        <form method="get" className="grid gap-2 md:grid-cols-5">
-          <select
-            name="siteId"
-            defaultValue={siteId ? String(siteId) : ""}
-            className="lunar-input"
-          >
-            <option value="">All sites</option>
-            {sites.map((site) => (
-              <option key={site.id} value={site.id}>
-                {site.name}
-              </option>
-            ))}
-          </select>
-          <select
-            name="shiftStatus"
-            defaultValue={shiftStatus}
-            className="lunar-input"
-          >
-            <option value="active">active shifts</option>
-            <option value="scheduled">scheduled shifts</option>
-            <option value="completed">completed shifts</option>
-            <option value="cancelled">cancelled shifts</option>
-          </select>
-          <select
-            name="incidentStatus"
-            defaultValue={incidentStatus}
-            className="lunar-input"
-          >
-            <option value="open">open incidents</option>
-            <option value="in_review">in_review incidents</option>
-            <option value="closed">closed incidents</option>
-          </select>
-          <select
-            name="sosStatus"
-            defaultValue={sosStatus}
-            className="lunar-input"
-          >
-            <option value="active">active SOS</option>
-            <option value="acknowledged">acknowledged SOS</option>
-            <option value="resolved">resolved SOS</option>
-          </select>
-          <select
-            name="hours"
-            defaultValue={String(hours)}
-            className="lunar-input"
-          >
-            <option value="1">Last 1h</option>
-            <option value="6">Last 6h</option>
-            <option value="24">Last 24h</option>
-            <option value="72">Last 72h</option>
-            <option value="168">Last 7d</option>
-          </select>
-          <div className="md:col-span-5 flex items-center gap-2">
-            <button className="rounded-md bg-lunar-700 px-4 py-2 text-sm font-semibold text-white hover:bg-lunar-800">
-              Apply filters
-            </button>
-            <Link
-              href="/manager/command-center"
-              className="rounded-md border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
-            >
-              Reset
-            </Link>
-          </div>
-        </form>
+        <CommandCenterFilters
+          sites={sites}
+          siteId={siteId || ""}
+          shiftStatus={shiftStatus}
+          incidentStatus={incidentStatus}
+          sosStatus={sosStatus}
+          hours={hours}
+        />
       </PortalPageHeader>
 
-      <PortalPageBody card={false}>
+      <PortalPageBody card={false} scrollPage className="pb-10">
         <div className="space-y-4">
           <section className="grid gap-3 md:grid-cols-4">
-        <Stat title="On-duty guards" value={kpisRes.data?.onDutyGuards ?? activeShifts.length} />
-        <Stat title="Open incidents" value={kpisRes.data?.openIncidents ?? openIncidents.length} />
-        <Stat title="Live SOS" value={kpisRes.data?.activeSos ?? sosEvents.length} />
-        <Stat title="Missed checkpoints" value={kpisRes.data?.missedCheckpointsEstimate ?? 0} />
+        <Stat title={shiftStatLabel} value={filteredShifts.length} />
+        <Stat title={incidentStatLabel} value={openIncidents.length} />
+        <Stat title={sosStatLabel} value={sosEvents.length} />
+        <Stat title="Live telemetry" value={telemetry.length} />
       </section>
 
       <section className="lunar-card lunar-card-pad">
         <h2 className="text-lg font-semibold text-slate-900">Real-time command center map</h2>
         <p className="text-sm text-slate-500">
-          Live guard telemetry, GPS trails, active shifts, open incidents, and SOS coordinates.
+          Tap a marker for full details. Multiple shifts at the same site share one pin with a count (e.g. 2). Map clicks elsewhere only close the popup.
         </p>
         <div className="mt-4">
           <OperationsMap markers={markers} trails={trails} />
         </div>
       </section>
 
-      <section className="grid gap-4 2xl:grid-cols-[1.1fr_0.9fr]">
-        <div className="grid gap-4 lg:grid-cols-4">
-          <FeedCard title="Active shifts" items={activeShifts.map((s) => `Shift #${s.id} • Guard ${s.userId} • Site ${s.siteId}`)} />
-          <FeedCard title="Open incidents" items={openIncidents.map((i) => `Incident #${i.id} • Site ${i.siteId} • ${i.title}`)} />
-          <FeedCard title="SOS queue" items={sosEvents.map((e) => `SOS #${e.id} • Guard ${e.userId} • ${e.status}`)} />
-          <FeedCard title="Live telemetry" items={telemetry.map((p) => `Guard ${p.userId} • Shift ${p.shiftId} • ${formatUkTime(p.recordedAt)}`)} />
-        </div>
-            <CommandEventFeed initialEvents={eventsRes.data?.items ?? []} siteId={siteId || null} />
-          </section>
+      <section className="grid gap-4 lg:grid-cols-2">
+        <CommandOperationsFeedsTabs
+          shiftsTabLabel={shiftStatLabel}
+          shifts={filteredShifts.map((s) => {
+            const guard = s.guardName?.trim() || s.userEmail || `Guard ${s.userId}`;
+            const site = s.siteName?.trim() || `Site ${s.siteId}`;
+            return `Shift #${s.id} · ${guard} · ${site} · ${formatUkDateTime(s.startsAt)} – ${formatUkDateTime(s.endsAt)}`;
+          })}
+          incidents={openIncidents.map((i) => {
+            const site = siteMap.get(i.siteId)?.name ?? `Site ${i.siteId}`;
+            return `Incident #${i.id} · ${site} · ${i.title} · ${formatUkDateTime(i.createdAt)}`;
+          })}
+          sos={sosEvents.map((e) => `SOS #${e.id} · Guard ${e.userId} · ${e.status} · ${formatUkDateTime(e.createdAt)}`)}
+          telemetry={telemetry.map((p) => {
+            const site = siteMap.get(p.siteId)?.name ?? `Site ${p.siteId}`;
+            return `${p.email || `Guard ${p.userId}`} · ${site} · Shift ${p.shiftId} · ${formatUkTime(p.recordedAt)}`;
+          })}
+        />
+        <CommandEventFeed initialEvents={eventsRes.data?.items ?? []} siteId={siteId || null} />
+      </section>
         </div>
       </PortalPageBody>
     </PortalPage>
   );
+}
+
+function shiftStatusLabel(status: string): string {
+  switch (status) {
+    case "scheduled":
+      return "Scheduled shifts";
+    case "completed":
+      return "Completed shifts";
+    case "cancelled":
+      return "Cancelled shifts";
+    case "missed":
+      return "Missed shifts";
+    default:
+      return "Active shifts";
+  }
+}
+
+function incidentStatusLabel(status: string): string {
+  switch (status) {
+    case "in_review":
+      return "In-review incidents";
+    case "closed":
+      return "Closed incidents";
+    default:
+      return "Open incidents";
+  }
+}
+
+function sosStatusLabel(status: string): string {
+  switch (status) {
+    case "acknowledged":
+      return "Acknowledged SOS";
+    case "resolved":
+      return "Resolved SOS";
+    default:
+      return "Active SOS";
+  }
 }
 
 function Stat({ title, value }: { title: string; value: string | number }) {
@@ -304,25 +357,6 @@ function Stat({ title, value }: { title: string; value: string | number }) {
       <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{title}</p>
       <p className="mt-2 text-3xl font-bold text-lunar-900">{value}</p>
     </div>
-  );
-}
-
-function FeedCard({ title, items }: { title: string; items: string[] }) {
-  return (
-    <article className="lunar-card lunar-card-pad">
-      <h3 className="portal-section-title">{title}</h3>
-      {items.length === 0 ? (
-        <p className="mt-2 text-sm text-slate-500">No entries.</p>
-      ) : (
-        <ul className="mt-3 space-y-2 text-sm">
-          {items.map((item) => (
-            <li key={item} className="rounded-lg border border-slate-100 p-2.5 text-slate-700">
-              {item}
-            </li>
-          ))}
-        </ul>
-      )}
-    </article>
   );
 }
 

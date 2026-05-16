@@ -35,7 +35,7 @@ type PortalDataTableProps<T> = {
   pageSize: number;
   sort: string;
   dir: SortDirection;
-  /** Enable row checkboxes + bulk action bar (checkboxes use form id). */
+  /** Enable row checkboxes + bulk action bar (checkboxes associate via form attribute). */
   bulk?: {
     formId: string;
     action: (formData: FormData) => void | Promise<void>;
@@ -140,17 +140,15 @@ export function PortalDataTable<T>({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {bulk ? (
-        <form id={bulk.formId} action={bulk.action} className="flex min-h-0 flex-1 flex-col">
+        <form id={bulk.formId} action={bulk.action} className="shrink-0">
           {bulk.actions.length > 0 ? (
-            <div className="shrink-0 border-b border-[var(--portal-border)] px-4 py-2">
+            <div className="border-b border-[var(--portal-border)] px-4 py-2">
               <PortalBulkActionBar formId={bulk.formId} actions={bulk.actions} />
             </div>
           ) : null}
-          <div className="lunar-table-wrap min-h-0 flex-1">{table}</div>
         </form>
-      ) : (
-        <div className="lunar-table-wrap min-h-0 flex-1">{table}</div>
-      )}
+      ) : null}
+      <div className="lunar-table-wrap min-h-0 flex-1">{table}</div>
 
       <div className="flex shrink-0 flex-col gap-3 border-t border-[var(--portal-border)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-[var(--portal-text-muted)]">

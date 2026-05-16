@@ -1,0 +1,4 @@
+email,password,role,status,phone,pay_rate_pence_hour,full_name,given_names,surname,gender,date_of_birth,sia_type,sia_number,sia_expiry_date
+jane.guard@example.com,ChangeMe123!,guard,active,+447700900001,1200,Jane Smith,Jane,Smith,female,1990-05-15,Door Supervisor,1234-5678-9012,2027-12-31
+bob.supervisor@example.com,ChangeMe123!,supervisor,active,+447700900002,,,,,,,,,
+admin.backup@example.com,ChangeMe123!,admin,active,+447700900003,,,,,,,,,

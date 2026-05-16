@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { PortalDetailLink } from "@/components/portal/portal-detail-link";
 import { ApiErrorNotice } from "@/components/portal/api-error-notice";
 import { DetailTable } from "@/components/portal/detail-table";
 import { PortalModal } from "@/components/portal/portal-modal";
@@ -354,12 +355,12 @@ export default async function ManagerIncidentsPage({ searchParams }: ManagerInci
                                 <button type="submit" className="lunar-btn-primary">
                                   Save status
                                 </button>
-                                <Link
+                                <PortalDetailLink
                                   href={`/manager/incidents/${incident.id}`}
                                   className="lunar-btn-secondary"
                                 >
                                   Full record →
-                                </Link>
+                                </PortalDetailLink>
                               </div>
                             </form>
                           </PortalModal>

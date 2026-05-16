@@ -1,5 +1,6 @@
 import { revalidatePath } from "next/cache";
 import Link from "next/link";
+import { PortalDetailLink } from "@/components/portal/portal-detail-link";
 import { redirect } from "next/navigation";
 import { ApiErrorNotice } from "@/components/portal/api-error-notice";
 import { PortalModal } from "@/components/portal/portal-modal";
@@ -208,12 +209,12 @@ export default async function AdminSitesPage({ searchParams }: AdminSitesPagePro
                   <td className="px-3 py-3">
                     <p className="font-medium text-slate-900">{site.name}</p>
                     <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5">
-                      <Link
+                      <PortalDetailLink
                         href={`/manager/sites/${site.id}`}
                         className="text-xs font-semibold text-lunar-700 hover:underline"
                       >
                         Ops dashboard
-                      </Link>
+                      </PortalDetailLink>
                       <Link
                         href={`/admin/checkpoints?siteId=${site.id}`}
                         className="text-xs font-semibold text-lunar-700 hover:underline"

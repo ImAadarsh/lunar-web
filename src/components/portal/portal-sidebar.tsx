@@ -1,6 +1,8 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
 import type { SessionUser } from "@/lib/session";
 import { webRoleLabel } from "@/lib/session";
@@ -36,6 +38,8 @@ function IconPanelOpen() {
 
 export function PortalSidebar({ user, links }: PortalSidebarProps) {
   const { collapsed, toggle } = usePortalSidebar();
+  const pathname = usePathname();
+  const onProfile = pathname === "/profile" || pathname.startsWith("/profile/");
 
   return (
     <aside
@@ -44,7 +48,7 @@ export function PortalSidebar({ user, links }: PortalSidebarProps) {
     >
       <div className="portal-sidebar-glow" aria-hidden />
       <div className={cn("portal-sidebar-brand", collapsed && "portal-sidebar-brand--collapsed")}>
-        <PortalSidebarTooltip label="Lunar Security" description="Operations" show={collapsed}>
+        <PortalSidebarTooltip label="Lunar Security" show={collapsed}>
           <Image
             src="/api/assets/logo?variant=transparent"
             alt="Lunar Security"
@@ -55,8 +59,7 @@ export function PortalSidebar({ user, links }: PortalSidebarProps) {
           />
         </PortalSidebarTooltip>
         <div className="portal-sidebar-brand-text">
-          <p className="portal-sidebar-brand-eyebrow">Lunar Security</p>
-          <p className="portal-sidebar-brand-title">Operations</p>
+          <p className="portal-sidebar-brand-title">Lunar Security</p>
         </div>
         <PortalSidebarTooltip
           label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -80,24 +83,31 @@ export function PortalSidebar({ user, links }: PortalSidebarProps) {
 
       <div className="portal-sidebar-footer">
         <PortalSidebarTooltip
-          label={user.email}
-          description={webRoleLabel(user.role)}
+          label={`${user.email} · ${webRoleLabel(user.role)}`}
+          description="My profile"
           show={collapsed}
           className="w-full justify-center"
         >
-          <div className={cn("portal-sidebar-user-card", collapsed && "portal-sidebar-user-card--collapsed")}>
+          <Link
+            href="/profile"
+            className={cn(
+              "portal-sidebar-user-card portal-sidebar-user-card--link",
+              collapsed && "portal-sidebar-user-card--collapsed",
+              onProfile && "portal-sidebar-user-card--active",
+            )}
+            aria-current={onProfile ? "page" : undefined}
+          >
             {!collapsed ? (
-              <>
-                <p className="portal-sidebar-user-label">Signed in</p>
-                <p className="portal-sidebar-user-email">{user.email}</p>
-                <p className="portal-sidebar-user-role">{webRoleLabel(user.role)}</p>
-              </>
+              <span className="portal-sidebar-user-line">
+                <span className="portal-sidebar-user-email">{user.email}</span>
+                <span className="portal-sidebar-user-role">{webRoleLabel(user.role)}</span>
+              </span>
             ) : (
               <span className="portal-sidebar-user-initial" aria-label={user.email}>
                 {user.email.charAt(0).toUpperCase()}
               </span>
             )}
-          </div>
+          </Link>
         </PortalSidebarTooltip>
         <PortalSidebarFooter collapsed={collapsed} />
       </div>

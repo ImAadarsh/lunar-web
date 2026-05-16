@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PortalBackButton } from "@/components/portal/portal-back-button";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { backendApiWithSession } from "@/lib/backend";
@@ -60,9 +61,12 @@ export default async function ManagerIncidentDetailPage({ params }: ManagerIncid
           <p className="text-sm text-slate-600">
             {detailRes.error?.message || "The incident could not be loaded."}
           </p>
-          <Link href="/manager/incidents" className="mt-4 inline-block text-sm font-semibold text-lunar-700 hover:underline">
-            Back to incidents
-          </Link>
+          <PortalBackButton
+            fallbackHref="/manager/incidents"
+            className="mt-4 inline-block text-sm font-semibold text-lunar-700 hover:underline"
+          >
+            Back
+          </PortalBackButton>
         </PortalPageBody>
       </PortalPage>
     );
@@ -74,9 +78,9 @@ export default async function ManagerIncidentDetailPage({ params }: ManagerIncid
         title={`Incident #${detailRes.data.id}`}
         description={detailRes.data.title}
         actions={
-          <Link href="/manager/incidents" className="lunar-btn-secondary lunar-btn-sm">
-            Back to incidents
-          </Link>
+          <PortalBackButton fallbackHref="/manager/incidents" className="lunar-btn-secondary lunar-btn-sm">
+            Back
+          </PortalBackButton>
         }
       />
       <PortalPageBody padded>

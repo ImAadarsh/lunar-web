@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { formatUkDateOnly, formatUkTrainedOn } from "@/lib/format-datetime";
+import { trainedSiteDutyBadge, type GuardAvailabilityInfo } from "@/lib/guard-availability";
 
 type TrainedSiteRow = {
   siteId: number;
@@ -10,6 +11,7 @@ type TrainedSiteRow = {
 type GuardTrainedSitesTabProps = {
   sites: TrainedSiteRow[];
   currentSiteId?: number | null;
+  availability: GuardAvailabilityInfo;
   siaNumber?: string | null;
   siaExpiryDate?: string | null;
 };
@@ -17,6 +19,7 @@ type GuardTrainedSitesTabProps = {
 export function GuardTrainedSitesTab({
   sites,
   currentSiteId,
+  availability,
   siaNumber,
   siaExpiryDate,
 }: GuardTrainedSitesTabProps) {
@@ -61,7 +64,7 @@ export function GuardTrainedSitesTab({
                 </tr>
               ) : null}
               {sites.map((site) => {
-                const onDutyHere = currentSiteId != null && site.siteId === currentSiteId;
+                const dutyBadge = trainedSiteDutyBadge(site.siteId, currentSiteId, availability);
                 return (
                   <tr key={site.siteId} className="border-t border-slate-100">
                     <td className="px-3 py-2.5">
@@ -74,10 +77,8 @@ export function GuardTrainedSitesTab({
                     </td>
                     <td className="px-3 py-2.5 text-slate-600">{formatUkTrainedOn(site.trainedOn)}</td>
                     <td className="px-3 py-2.5">
-                      {onDutyHere ? (
-                        <span className="inline-flex rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-800">
-                          On duty here
-                        </span>
+                      {dutyBadge ? (
+                        <span className={dutyBadge.className}>{dutyBadge.label}</span>
                       ) : (
                         <span className="text-slate-400">—</span>
                       )}

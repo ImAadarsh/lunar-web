@@ -12,6 +12,7 @@ export function PortalSelectAllCheckbox({ formId, className }: PortalSelectAllCh
   return (
     <input
       type="checkbox"
+      form={formId}
       className={cn("h-4 w-4 rounded border-slate-300 text-lunar-600", className)}
       aria-label="Select all rows on this page"
       onChange={(e) => {
@@ -36,6 +37,7 @@ export function PortalRowCheckbox({ formId, value, className }: PortalRowCheckbo
   return (
     <input
       type="checkbox"
+      form={formId}
       name="ids"
       value={String(value)}
       data-bulk-form={formId}

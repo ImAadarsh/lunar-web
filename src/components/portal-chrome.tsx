@@ -1,8 +1,10 @@
 "use client";
 
+import { Suspense } from "react";
 import { FocusPortalShell } from "@/components/focus-portal-shell";
 import { PortalShell } from "@/components/portal-shell";
 import { PortalFocusProvider } from "@/components/portal/portal-focus-context";
+import { PortalNavCapture } from "@/components/portal/portal-nav-capture";
 import { PortalThemeProvider } from "@/components/portal/portal-theme-provider";
 import { isFocusDashboardPath } from "@/lib/portal-focus";
 import type { SessionUser } from "@/lib/session";
@@ -19,6 +21,9 @@ export function PortalChrome({ user, children }: PortalChromeProps) {
 
   return (
     <PortalThemeProvider>
+      <Suspense fallback={null}>
+        <PortalNavCapture />
+      </Suspense>
       {focus ? (
         <PortalFocusProvider value>
           <FocusPortalShell user={user}>{children}</FocusPortalShell>

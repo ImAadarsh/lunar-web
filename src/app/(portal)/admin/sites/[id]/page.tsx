@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { PortalBackButton } from "@/components/portal/portal-back-button";
 import { ApiErrorNotice } from "@/components/portal/api-error-notice";
 import { PortalPage, PortalPageBody, PortalPageHeader } from "@/components/portal/portal-page-layout";
 import { apiErrorMessage, backendApiWithSession } from "@/lib/backend";
@@ -38,9 +39,9 @@ export default async function AdminSiteDetailPage({ params }: { params: Promise<
         <PortalPageHeader
           title="Site detail"
           actions={
-            <Link href="/admin/sites" className="lunar-btn-secondary lunar-btn-sm">
-              Back to sites
-            </Link>
+            <PortalBackButton fallbackHref="/admin/sites" className="lunar-btn-secondary lunar-btn-sm">
+              Back
+            </PortalBackButton>
           }
         >
           <ApiErrorNotice errors={[apiErrorMessage("Site detail", siteRes)]} />
@@ -60,9 +61,9 @@ export default async function AdminSiteDetailPage({ params }: { params: Promise<
         description={site.address?.trim() || "No address on file"}
         actions={
           <>
-            <Link href="/admin/sites" className="lunar-btn-secondary lunar-btn-sm">
-              Back to sites
-            </Link>
+            <PortalBackButton fallbackHref="/admin/sites" className="lunar-btn-secondary lunar-btn-sm">
+              Back
+            </PortalBackButton>
             <Link href={`/admin/checkpoints?siteId=${siteId}`} className="lunar-btn-primary lunar-btn-sm">
               Manage checkpoints
             </Link>

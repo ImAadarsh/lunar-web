@@ -266,6 +266,7 @@ export default async function GuardDashboardPage({ params, searchParams }: Guard
           <GuardTrainedSitesTab
             sites={data.trainedSites}
             currentSiteId={data.currentShift?.siteId}
+            availability={availability}
             siaNumber={data.user.siaNumber}
             siaExpiryDate={data.user.siaExpiryDate}
           />

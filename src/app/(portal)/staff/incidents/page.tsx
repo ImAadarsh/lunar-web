@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { PortalDetailLink } from "@/components/portal/portal-detail-link";
 import { ApiErrorNotice } from "@/components/portal/api-error-notice";
 import {
   PortalPage,
@@ -203,9 +204,9 @@ export default async function StaffIncidentsPage() {
                 incidents.map((incident) => (
                   <tr key={incident.id}>
                     <td className="font-medium">
-                      <Link href={`/staff/incidents/${incident.id}`} className="hover:underline">
+                      <PortalDetailLink href={`/staff/incidents/${incident.id}`} className="hover:underline">
                         #{incident.id} {incident.title}
-                      </Link>
+                      </PortalDetailLink>
                     </td>
                     <td>{incident.category}</td>
                     <td>{incident.siteId}</td>

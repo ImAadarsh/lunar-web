@@ -10,9 +10,13 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
   const tone =
     normalized === "approved" || normalized === "resolved" || normalized === "closed" || normalized === "active"
       ? "lunar-badge-success"
-      : normalized === "pending" || normalized === "open" || normalized === "in_review" || normalized === "acknowledged"
+      : normalized === "pending" ||
+          normalized === "open" ||
+          normalized === "in_review" ||
+          normalized === "acknowledged" ||
+          normalized === "invited"
         ? "lunar-badge-warning"
-        : normalized === "rejected" || normalized === "cancelled"
+        : normalized === "rejected" || normalized === "cancelled" || normalized === "suspended"
           ? "lunar-badge-danger"
           : "lunar-badge-neutral";
 

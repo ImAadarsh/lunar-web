@@ -1,5 +1,9 @@
+"use client";
+
+import { useState } from "react";
+import { SearchableGuardPicker } from "@/components/dashboard/searchable-guard-picker";
 import { assignGuardShiftAction } from "@/lib/shift-dashboard-actions";
-import { guardAvailabilityLabel, type GuardAvailabilityInfo } from "@/lib/guard-availability";
+import type { GuardAvailabilityInfo } from "@/lib/guard-availability";
 
 type TrainedGuardOption = {
   userId: number;
@@ -13,44 +17,51 @@ type AssignShiftFromSiteFormProps = {
 };
 
 export function AssignShiftFromSiteForm({ siteId, guards }: AssignShiftFromSiteFormProps) {
+  const [userId, setUserId] = useState<number | null>(null);
   const assignable = guards.filter((g) => g.availability.canAssign);
+  const selectedAssignable = userId != null && assignable.some((g) => g.userId === userId);
 
   if (guards.length === 0) {
-    return <p className="text-sm text-slate-500">No guards are trained for this site yet.</p>;
+    return <p className="text-sm text-[var(--portal-text-muted)]">No guards are trained for this site yet.</p>;
   }
 
   return (
     <form action={assignGuardShiftAction} className="space-y-3">
       <input type="hidden" name="siteId" value={String(siteId)} />
-      <label className="block text-sm text-slate-600">
-        Guard (trained & assignable)
-        <select name="userId" required className="mt-1 w-full lunar-select" defaultValue="">
-          <option value="" disabled>
-            Select guard
-          </option>
-          {guards.map((guard) => (
-            <option key={guard.userId} value={guard.userId} disabled={!guard.availability.canAssign}>
-              {guard.label} — {guardAvailabilityLabel(guard.availability.state)}
-            </option>
-          ))}
-        </select>
-      </label>
+      <input type="hidden" name="userId" value={userId ?? ""} />
+
+      <div>
+        <p className="text-sm font-medium text-[var(--portal-text)]">Guard (trained &amp; assignable)</p>
+        <SearchableGuardPicker
+          guards={guards}
+          value={userId}
+          onChange={setUserId}
+          emptyMessage="No trained guards match your search."
+        />
+      </div>
+
       {assignable.length === 0 ? (
         <p className="text-xs text-amber-800">
           No guards can be assigned right now (on duty, assigned, duty not started, or recharging).
         </p>
       ) : null}
+
       <div className="grid grid-cols-2 gap-2">
-        <label className="block text-sm text-slate-600">
+        <label className="block text-sm text-[var(--portal-text-muted)]">
           Start
           <input name="startsAt" type="datetime-local" required className="mt-1 w-full lunar-input" />
         </label>
-        <label className="block text-sm text-slate-600">
+        <label className="block text-sm text-[var(--portal-text-muted)]">
           End
           <input name="endsAt" type="datetime-local" required className="mt-1 w-full lunar-input" />
         </label>
       </div>
-      <button type="submit" className="lunar-btn-primary w-full sm:w-auto" disabled={assignable.length === 0}>
+
+      <button
+        type="submit"
+        className="lunar-btn-primary w-full sm:w-auto"
+        disabled={!selectedAssignable}
+      >
         Assign guard to site
       </button>
     </form>
