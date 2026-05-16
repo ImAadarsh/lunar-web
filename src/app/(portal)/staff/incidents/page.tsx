@@ -1,6 +1,5 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { PortalDetailLink } from "@/components/portal/portal-detail-link";
 import { ApiErrorNotice } from "@/components/portal/api-error-notice";
 import {

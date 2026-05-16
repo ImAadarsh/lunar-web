@@ -6,11 +6,12 @@
 #
 # Portal URL: https://lunar-web.endeavourdigital.cloud
 # API (public): https://lunar.endeavourdigital.cloud/api/v1
-# Server-side login calls BACKEND_API_BASE (VPC private IP by default, not the public API hostname).
+# Server-side API calls use BACKEND_API_BASE. The script probes private IP from the web host;
+# if unreachable (different VPC / security group), it falls back to the public API hostname.
 #
 # Usage (from lunar_security_web/):
 #   ./deploy_web.sh
-#   BACKEND_API_BASE=http://172.31.12.134:4000/api/v1 ./deploy_web.sh
+#   BACKEND_API_BASE=https://lunar.endeavourdigital.cloud/api/v1 ./deploy_web.sh
 #   DEPLOY_MODE=git ./deploy_web.sh
 set -euo pipefail
 
@@ -29,6 +30,7 @@ process_name="${PROCESS_NAME:-lunar-web}"
 port="${PORT:-3000}"
 google_maps_api_key="${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY:-AIzaSyAg9eHoFx4kW3MBy2FLazMJQa6UPdKqj_A}"
 portal_origin="${PORTAL_ORIGIN:-https://lunar-web.endeavourdigital.cloud}"
+backend_api_public="${BACKEND_API_PUBLIC:-https://lunar.endeavourdigital.cloud/api/v1}"
 rsync_excludes=(
   --exclude .git
   --exclude .env.local
@@ -40,8 +42,14 @@ ssh_target="${ssh_user}@${ssh_host}"
 ssh_backend="${ssh_user}@${backend_ssh_host}"
 ssh_opts=(-i "$ssh_key" -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20)
 
-log() { printf '==> %s\n' "$*"; }
+# Logs must go to stderr so $(resolve_backend_api_base) capture stays clean.
+log() { printf '==> %s\n' "$*" >&2; }
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+
+validate_backend_api_base() {
+  local base="$1"
+  [[ "$base" =~ ^https?://[^[:space:]]+/api/v1$ ]] || return 1
+}
 
 remote() {
   ssh "${ssh_opts[@]}" "$ssh_target" "$@"
@@ -51,20 +59,58 @@ remote_backend() {
   ssh "${ssh_opts[@]}" "$ssh_backend" "$@"
 }
 
+backend_health_ok() {
+  local health_url="$1"
+  remote "curl -fsS --connect-timeout 8 '${health_url}' 2>/dev/null | grep -q '\"status\":\"ok\"'"
+}
+
+# Confirms the web host can reach the API (not only /health through a proxy).
+backend_login_reachable() {
+  local api_base="$1"
+  local code
+  code="$(remote "curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 12 -X POST '${api_base}/auth/login' -H 'Content-Type: application/json' -d '{\"email\":\"deploy-probe@invalid.local\",\"password\":\"invalid\"}'" 2>/dev/null || echo "000")"
+  [[ "$code" == "401" || "$code" == "400" ]]
+}
+
 resolve_backend_api_base() {
   if [[ -n "${BACKEND_API_BASE:-}" ]]; then
+    log "Using BACKEND_API_BASE from environment."
     printf '%s' "$BACKEND_API_BASE"
     return
   fi
+
+  local ip private_base public_base public_health
+  public_base="${backend_api_public}"
+  public_health="${public_base%/api/v1}/health"
+
   log "Resolving backend private IP from ${backend_ssh_host}…"
-  local ip
-  ip="$(remote_backend "hostname -I | awk '{print \$1}'")" || die "Could not resolve backend private IP. Set BACKEND_API_BASE."
-  [[ -n "$ip" ]] || die "Backend private IP was empty. Set BACKEND_API_BASE."
-  printf 'http://%s:4000/api/v1' "$ip"
+  ip="$(remote_backend "hostname -I | awk '{print \$1}'" 2>/dev/null || true)"
+  if [[ -n "$ip" ]]; then
+    private_base="http://${ip}:4000/api/v1"
+    log "Probing private API from web host (http://${ip}:4000)…"
+    if backend_health_ok "http://${ip}:4000/health" && backend_login_reachable "$private_base"; then
+      log "Using private backend: ${private_base}"
+      printf '%s' "$private_base"
+      return
+    fi
+    log "Private backend not reachable from web host (ETIMEDOUT or blocked SG) — trying public API."
+  else
+    log "Could not read backend private IP — trying public API."
+  fi
+
+  log "Probing public API from web host (${public_base})…"
+  if backend_health_ok "$public_health" && backend_login_reachable "$public_base"; then
+    log "Using public backend: ${public_base}"
+    printf '%s' "$public_base"
+    return
+  fi
+
+  die "Backend unreachable from web host. Set BACKEND_API_BASE (e.g. ${public_base}) or fix VPC/security groups for port 4000."
 }
 
 write_local_env_production() {
   local base="$1"
+  validate_backend_api_base "$base" || die "Invalid BACKEND_API_BASE (check deploy script output): ${base}"
   cat > .env.production <<ENV
 BACKEND_API_BASE=${base}
 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=${google_maps_api_key}
@@ -133,14 +179,26 @@ else
   pm2 start ecosystem.config.cjs
 fi
 pm2 save
-sleep 3
-curl -fsS --connect-timeout 10 \"http://127.0.0.1:${port}/api/health\" | grep -q '\"ok\":true' || { echo 'Health check failed'; pm2 logs '${process_name}' --lines 40 --nostream; exit 1; }
-code=\$(curl -sS -o /tmp/login_probe.json -w '%{http_code}' --connect-timeout 15 -X POST \"http://127.0.0.1:${port}/api/auth/login\" -H 'Content-Type: application/json' -d '{\"email\":\"deploy-probe@invalid.local\",\"password\":\"invalid\"}')
-if [ \"\$code\" != '401' ]; then
-  echo \"Login proxy check failed (expected 401, got \$code): \$(cat /tmp/login_probe.json)\"
+
+wait_portal_login_probe() {
+  local i=1 code
+  while [ \"\$i\" -le 20 ]; do
+    curl -fsS --connect-timeout 10 \"http://127.0.0.1:${port}/api/health\" 2>/dev/null | grep -q '\"ok\":true' || { sleep 1; i=\$((i + 1)); continue; }
+    code=\$(curl -sS -o /tmp/login_probe.json -w '%{http_code}' --connect-timeout 20 -X POST \"http://127.0.0.1:${port}/api/auth/login\" -H 'Content-Type: application/json' -d '{\"email\":\"deploy-probe@invalid.local\",\"password\":\"invalid\"}')
+    if [ \"\$code\" = '401' ]; then
+      return 0
+    fi
+    sleep 1
+    i=\$((i + 1))
+  done
+  echo \"Login proxy check failed (expected 401, got \${code:-none}): \$(cat /tmp/login_probe.json 2>/dev/null)\"
+  echo \"BACKEND_API_BASE in .env:\"
+  grep BACKEND_API_BASE .env 2>/dev/null || true
   pm2 logs '${process_name}' --lines 40 --nostream
-  exit 1
-fi
+  return 1
+}
+
+wait_portal_login_probe || exit 1
 echo 'Post-deploy checks OK (health + login proxy → backend).'
 pm2 status
 df -h / | tail -1"
@@ -149,6 +207,7 @@ df -h / | tail -1"
 deploy_rsync() {
   local base
   base="$(resolve_backend_api_base)"
+  validate_backend_api_base "$base" || die "Resolved invalid BACKEND_API_BASE. Re-run with BACKEND_API_BASE=${backend_api_public}"
   chmod 400 "$ssh_key"
   local_build "$base"
   local swc_ver
@@ -174,6 +233,7 @@ deploy_rsync() {
 deploy_git() {
   local base
   base="$(resolve_backend_api_base)"
+  validate_backend_api_base "$base" || die "Resolved invalid BACKEND_API_BASE. Re-run with BACKEND_API_BASE=${backend_api_public}"
   chmod 400 "$ssh_key"
   log "DEPLOY_MODE=git — deploying via git pull on server (requires GitHub + npm egress)."
   ssh \
@@ -234,8 +294,24 @@ REMOTE_GIT
   log "Portal: ${portal_origin}"
 }
 
+deploy_env_only() {
+  local base
+  base="${BACKEND_API_BASE:-$backend_api_public}"
+  validate_backend_api_base "$base" || die "Set BACKEND_API_BASE to a URL like ${backend_api_public}"
+  chmod 400 "$ssh_key"
+  log "Updating server .env only (no build): BACKEND_API_BASE=${base}"
+  remote_finish "$base"
+  log "Env-only deploy complete. Portal: ${portal_origin}"
+}
+
 case "$deploy_mode" in
-  rsync) deploy_rsync ;;
+  rsync)
+    if [[ "${DEPLOY_ENV_ONLY:-}" == "1" ]]; then
+      deploy_env_only
+    else
+      deploy_rsync
+    fi
+    ;;
   git) deploy_git ;;
   *) die "Unknown DEPLOY_MODE=${deploy_mode} (use rsync or git)" ;;
 esac
