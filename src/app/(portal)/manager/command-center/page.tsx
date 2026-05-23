@@ -9,6 +9,8 @@ import { AutoRefreshControl } from "@/components/operations/auto-refresh-control
 import { CommandEventFeed } from "@/components/operations/command-event-feed";
 import { CommandCenterFilters } from "@/components/operations/command-center-filters";
 import { CommandOperationsFeedsTabs } from "@/components/operations/command-operations-feeds-tabs";
+import type { ShiftQueueItem } from "@/components/operations/shift-queue-card";
+import { buildMegaCalendarHref } from "@/lib/dashboard-period";
 
 type SiteList = {
   items: Array<{ id: number; name: string; centerLat: number; centerLng: number }>;
@@ -167,6 +169,18 @@ export default async function ManagerCommandCenterPage({ searchParams }: Command
   const incidentStatLabel = incidentStatusLabel(incidentStatus);
   const sosStatLabel = sosStatusLabel(sosStatus);
 
+  const shiftFeedItems: ShiftQueueItem[] = filteredShifts.map((s) => ({
+    id: s.id,
+    siteId: s.siteId,
+    siteName: s.siteName?.trim() || siteMap.get(s.siteId)?.name || `Site ${s.siteId}`,
+    userId: s.userId,
+    guardName: s.guardName?.trim() || s.userEmail || `Guard ${s.userId}`,
+    startsAt: s.startsAt,
+    endsAt: s.endsAt,
+    status: s.status,
+    dutyState: s.dutyState,
+  }));
+
   const markers: OpsMarker[] = [];
   for (const shift of filteredShifts) {
     const site = siteMap.get(shift.siteId);
@@ -188,8 +202,8 @@ export default async function ManagerCommandCenterPage({ searchParams }: Command
         { label: "Starts", value: formatUkDateTime(shift.startsAt) },
         { label: "Ends", value: formatUkDateTime(shift.endsAt) },
       ],
-      actionHref: `/manager/guards/${shift.userId}`,
-      actionLabel: "Open guard dashboard",
+      actionHref: `/manager/sites/${shift.siteId}?tab=calendar`,
+      actionLabel: "Site calendar",
     });
   }
   for (const incident of openIncidents) {
@@ -290,11 +304,9 @@ export default async function ManagerCommandCenterPage({ searchParams }: Command
       <section className="grid gap-4 lg:grid-cols-2">
         <CommandOperationsFeedsTabs
           shiftsTabLabel={shiftStatLabel}
-          shifts={filteredShifts.map((s) => {
-            const guard = s.guardName?.trim() || s.userEmail || `Guard ${s.userId}`;
-            const site = s.siteName?.trim() || `Site ${s.siteId}`;
-            return `Shift #${s.id} · ${guard} · ${site} · ${formatUkDateTime(s.startsAt)} – ${formatUkDateTime(s.endsAt)}`;
-          })}
+          shiftItems={shiftFeedItems}
+          megaCalendarHref={buildMegaCalendarHref()}
+          shifts={shiftFeedItems.map((s) => `Shift #${s.id}`)}
           incidents={openIncidents.map((i) => {
             const site = siteMap.get(i.siteId)?.name ?? `Site ${i.siteId}`;
             return `Incident #${i.id} · ${site} · ${i.title} · ${formatUkDateTime(i.createdAt)}`;

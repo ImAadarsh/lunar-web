@@ -1,3 +1,6 @@
+import { DutyScheduleHint } from "@/components/dashboard/duty-schedule-hint";
+import { ForceAssignField } from "@/components/dashboard/force-assign-field";
+import { UkDateTimeHint } from "@/components/forms/uk-datetime-hint";
 import { assignGuardShiftAction } from "@/lib/shift-dashboard-actions";
 
 type TrainedSiteOption = {
@@ -8,9 +11,14 @@ type TrainedSiteOption = {
 type AssignShiftFromGuardFormProps = {
   userId: number;
   trainedSites: TrainedSiteOption[];
+  isAdmin: boolean;
 };
 
-export function AssignShiftFromGuardForm({ userId, trainedSites }: AssignShiftFromGuardFormProps) {
+export function AssignShiftFromGuardForm({
+  userId,
+  trainedSites,
+  isAdmin,
+}: AssignShiftFromGuardFormProps) {
   if (trainedSites.length === 0) {
     return (
       <p className="text-sm text-slate-500">
@@ -21,6 +29,7 @@ export function AssignShiftFromGuardForm({ userId, trainedSites }: AssignShiftFr
 
   return (
     <form action={assignGuardShiftAction} className="space-y-3">
+      <DutyScheduleHint />
       <input type="hidden" name="userId" value={String(userId)} />
       <label className="block text-sm text-slate-600">
         Site (trained only)
@@ -37,14 +46,16 @@ export function AssignShiftFromGuardForm({ userId, trainedSites }: AssignShiftFr
       </label>
       <div className="grid grid-cols-2 gap-2">
         <label className="block text-sm text-slate-600">
-          Start
+          Start (UK)
           <input name="startsAt" type="datetime-local" required className="mt-1 w-full lunar-input" />
         </label>
         <label className="block text-sm text-slate-600">
-          End
+          End (UK)
           <input name="endsAt" type="datetime-local" required className="mt-1 w-full lunar-input" />
         </label>
       </div>
+      <UkDateTimeHint />
+      <ForceAssignField isAdmin={isAdmin} />
       <button type="submit" className="lunar-btn-primary w-full sm:w-auto">
         Schedule shift
       </button>

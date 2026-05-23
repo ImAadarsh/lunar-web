@@ -2,6 +2,24 @@
 
 export const GUARD_RECHARGE_HOURS = 7;
 export const GUARD_RECHARGE_MS = GUARD_RECHARGE_HOURS * 60 * 60 * 1000;
+export const DUTY_TIMEZONE = "Europe/London";
+
+/** Duty day = UK calendar date of shift start (e.g. 21:00–06:00 uses the evening date). */
+export function getDutyDate(startsAt: string): string | null {
+  const d = new Date(startsAt);
+  if (Number.isNaN(d.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: DUTY_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+  const y = parts.find((p) => p.type === "year")?.value;
+  const m = parts.find((p) => p.type === "month")?.value;
+  const day = parts.find((p) => p.type === "day")?.value;
+  if (!y || !m || !day) return null;
+  return `${y}-${m}-${day}`;
+}
 
 export type GuardShiftRef = {
   userId: number;
@@ -158,7 +176,7 @@ export function evaluateGuardAvailability(
     return {
       state: "assigned",
       dutyState: "assigned",
-      canAssign: false,
+      canAssign: true,
       lastShiftEndedAt: null,
       rechargingUntil: null,
       msUntilAvailable: null,

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { mutateBackend } from "@/lib/portal-mutations";
+import { ukDateTimeLocalToIso } from "@/lib/uk-datetime";
 
 function revalidateSite(siteId: number, userId?: number) {
   revalidatePath(`/manager/sites/${siteId}`);
@@ -63,8 +64,8 @@ export async function assignGuardAtSiteAction(formData: FormData) {
   await mutateBackend("/shifts", "POST", {
     siteId,
     userId,
-    startsAt: new Date(startsAt).toISOString(),
-    endsAt: new Date(endsAt).toISOString(),
+    startsAt: ukDateTimeLocalToIso(startsAt),
+    endsAt: ukDateTimeLocalToIso(endsAt),
     status: "scheduled",
   });
 

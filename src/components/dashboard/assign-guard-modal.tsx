@@ -11,9 +11,10 @@ type TrainedGuardOption = {
 type AssignGuardModalProps = {
   siteId: number;
   guards: TrainedGuardOption[];
+  isAdmin: boolean;
 };
 
-export function AssignGuardModal({ siteId, guards }: AssignGuardModalProps) {
+export function AssignGuardModal({ siteId, guards, isAdmin }: AssignGuardModalProps) {
   const assignable = guards.filter((g) => g.availability.canAssign);
 
   return (
@@ -31,7 +32,7 @@ export function AssignGuardModal({ siteId, guards }: AssignGuardModalProps) {
           No guards can be assigned right now. Try again when someone is available.
         </p>
       ) : null}
-      <AssignShiftFromSiteForm siteId={siteId} guards={guards} />
+      <AssignShiftFromSiteForm siteId={siteId} guards={guards} isAdmin={isAdmin} />
     </PortalModal>
   );
 }

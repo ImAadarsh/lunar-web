@@ -4,6 +4,7 @@ import { ApiErrorNotice } from "@/components/portal/api-error-notice";
 import { PortalPage, PortalPageBody, PortalPageHeader } from "@/components/portal/portal-page-layout";
 import { StatCard } from "@/components/ui/stat-card";
 import { AssignGuardModal } from "@/components/dashboard/assign-guard-modal";
+import { CalendarShiftsView } from "@/components/dashboard/calendar-shifts-view";
 import { DashboardAlerts } from "@/components/dashboard/dashboard-alerts";
 import { DashboardQuickLinks } from "@/components/dashboard/dashboard-quick-links";
 import { DashboardShiftCards } from "@/components/dashboard/dashboard-shift-cards";
@@ -31,7 +32,13 @@ import type { DashboardAlert, ShiftGroups } from "@/lib/dashboard-types";
 import { formatUkDateTime } from "@/lib/format-datetime";
 import { shiftDutyLabel } from "@/lib/guard-availability";
 import { displayGuardName } from "@/lib/leave-month-stats";
-import { buildDashboardQuery, parseDashboardPeriodSearchParams } from "@/lib/dashboard-period";
+import {
+  buildDashboardQuery,
+  buildFocusTabHref,
+  buildSiteCalendarHref,
+  forwardDashboardDateRange,
+  parseDashboardPeriodSearchParams,
+} from "@/lib/dashboard-period";
 import { getSessionFromCookies } from "@/lib/server-session";
 
 const SITE_TABS = [
@@ -39,6 +46,7 @@ const SITE_TABS = [
   { id: "trained-guards", label: "Trained guards" },
   { id: "details", label: "Site details" },
   { id: "shifts", label: "Shifts" },
+  { id: "calendar", label: "Calendar", resetDates: true },
   { id: "hours", label: "Hours" },
 ] as const;
 
@@ -135,10 +143,15 @@ export default async function SiteDashboardPage({ params, searchParams }: SiteDa
   if (!Number.isInteger(siteId) || siteId <= 0) notFound();
 
   const sp = await searchParams;
-  const periodParams = parseDashboardPeriodSearchParams(sp);
   const tab = resolveSiteTab(sp.tab);
+  const periodParams = parseDashboardPeriodSearchParams(
+    sp,
+    tab === "calendar" ? forwardDashboardDateRange : undefined,
+  );
 
   const basePath = `/manager/sites/${siteId}`;
+  const calendarHref = buildSiteCalendarHref(siteId);
+  const shiftsTabHref = buildFocusTabHref(basePath, "shifts", periodParams);
   const dashRes = await backendApiWithSession<SiteDashboardResponse>(
     `/dashboard/sites/${siteId}?${buildDashboardQuery(periodParams)}`,
     session,
@@ -230,7 +243,7 @@ export default async function SiteDashboardPage({ params, searchParams }: SiteDa
             address={data.site.address}
             isActive={siteActive}
           />
-          <AssignGuardModal siteId={siteId} guards={trainedGuardOptions} />
+          <AssignGuardModal siteId={siteId} guards={trainedGuardOptions} isAdmin={isAdmin} />
         </div>
       </FocusDashboardHeader>
       <PortalPageHeader>
@@ -261,8 +274,18 @@ export default async function SiteDashboardPage({ params, searchParams }: SiteDa
               <StatCard title="Checkpoints" value={summary.checkpoints} hint="Patrol points" />
             </div>
             <div className="grid gap-3 sm:grid-cols-3">
-              <StatCard title="Today&apos;s shifts" value={summary.shiftsToday} hint="Scheduled today" />
-              <StatCard title="Assignable guards" value={summary.assignableGuards} hint={`of ${summary.trainedGuards} trained`} />
+              <StatCard
+                title="Today&apos;s shifts"
+                value={summary.shiftsToday}
+                hint="Scheduled today · open shifts"
+                href={shiftsTabHref}
+              />
+              <StatCard
+                title="Assignable guards"
+                value={summary.assignableGuards}
+                hint={`of ${summary.trainedGuards} trained · open calendar`}
+                href={calendarHref}
+              />
               <StatCard
                 title="Coverage gaps"
                 value={summary.dutyNotStarted + summary.missedRecent}
@@ -274,7 +297,7 @@ export default async function SiteDashboardPage({ params, searchParams }: SiteDa
               <section className="lunar-card lunar-card-pad">
                 <h3 className="portal-section-title">Roster snapshot</h3>
                 <div className="mt-3">
-                  <RosterSummaryChips counts={rosterCounts} />
+                  <RosterSummaryChips counts={rosterCounts} calendarHref={calendarHref} />
                 </div>
               </section>
             ) : null}
@@ -373,6 +396,16 @@ export default async function SiteDashboardPage({ params, searchParams }: SiteDa
               emptyMessage="No shifts scheduled at this site."
             />
           </PortalTableCard>
+        ) : null}
+
+        {tab === "calendar" ? (
+          <CalendarShiftsView
+            mode="site"
+            from={periodParams.from}
+            to={periodParams.to}
+            shifts={data.shifts}
+            emptyMessage="No shifts scheduled at this site in the selected date range."
+          />
         ) : null}
 
         {tab === "hours" ? (

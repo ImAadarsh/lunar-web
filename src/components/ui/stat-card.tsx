@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { cn } from "@/lib/cn";
 
 type StatCardProps = {
@@ -6,18 +7,12 @@ type StatCardProps = {
   hint?: string;
   tone?: "default" | "critical" | "success";
   className?: string;
+  href?: string;
 };
 
-export function StatCard({ title, value, hint, tone = "default", className }: StatCardProps) {
-  return (
-    <div
-      className={cn(
-        "group lunar-stat",
-        tone === "critical" && "[--portal-stat-value:var(--portal-badge-danger-text)]",
-        tone === "success" && "[--portal-stat-value:var(--portal-badge-success-text)]",
-        className,
-      )}
-    >
+export function StatCard({ title, value, hint, tone = "default", className, href }: StatCardProps) {
+  const inner = (
+    <>
       <div
         className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full blur-2xl transition"
         style={{ background: "color-mix(in srgb, var(--portal-accent) 18%, transparent)" }}
@@ -40,6 +35,24 @@ export function StatCard({ title, value, hint, tone = "default", className }: St
           {hint}
         </p>
       ) : null}
-    </div>
+    </>
   );
+
+  const shellClass = cn(
+    "group lunar-stat",
+    tone === "critical" && "[--portal-stat-value:var(--portal-badge-danger-text)]",
+    tone === "success" && "[--portal-stat-value:var(--portal-badge-success-text)]",
+    href && "cursor-pointer transition hover:ring-2 hover:ring-[var(--portal-accent)]/30",
+    className,
+  );
+
+  if (href) {
+    return (
+      <Link href={href} className={shellClass}>
+        {inner}
+      </Link>
+    );
+  }
+
+  return <div className={shellClass}>{inner}</div>;
 }

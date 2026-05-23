@@ -16,17 +16,28 @@ export function defaultDashboardDateRange(): { from: string; to: string } {
   return { from: toIsoDate(from), to: toIsoDate(to) };
 }
 
+/** Forward-looking calendar default: today through the next 30 days inclusive. */
+export function forwardDashboardDateRange(): { from: string; to: string } {
+  const from = new Date();
+  const to = new Date();
+  to.setDate(to.getDate() + 30);
+  return { from: toIsoDate(from), to: toIsoDate(to) };
+}
+
 export type DashboardPeriodParams = {
   from: string;
   to: string;
 };
 
-export function parseDashboardPeriodSearchParams(sp: {
-  from?: string;
-  to?: string;
-  year?: string;
-  month?: string;
-}): DashboardPeriodParams {
+export function parseDashboardPeriodSearchParams(
+  sp: {
+    from?: string;
+    to?: string;
+    year?: string;
+    month?: string;
+  },
+  fallback: () => DashboardPeriodParams = defaultDashboardDateRange,
+): DashboardPeriodParams {
   const fromRaw = sp.from?.trim();
   const toRaw = sp.to?.trim();
   if (fromRaw && toRaw && DATE_ONLY.test(fromRaw) && DATE_ONLY.test(toRaw)) {
@@ -47,7 +58,7 @@ export function parseDashboardPeriodSearchParams(sp: {
     return { from: `${year}-01-01`, to: `${year}-12-31` };
   }
 
-  return defaultDashboardDateRange();
+  return fallback();
 }
 
 export function buildDashboardQuery(period: DashboardPeriodParams, extra?: Record<string, string>) {
@@ -58,4 +69,34 @@ export function buildDashboardQuery(period: DashboardPeriodParams, extra?: Recor
     }
   }
   return q;
+}
+
+/** Focus dashboard tab link (`calendar` omits from/to — matches tab nav `resetDates`). */
+export function buildFocusTabHref(
+  basePath: string,
+  tab: string,
+  period?: DashboardPeriodParams | null,
+) {
+  const params =
+    tab === "calendar" || !period
+      ? new URLSearchParams({ tab })
+      : new URLSearchParams({ from: period.from, to: period.to, tab });
+  return `${basePath}?${params}`;
+}
+
+export function buildGuardCalendarHref(userId: number) {
+  return buildFocusTabHref(`/manager/guards/${userId}`, "calendar");
+}
+
+export function buildSiteCalendarHref(siteId: number) {
+  return buildFocusTabHref(`/manager/sites/${siteId}`, "calendar");
+}
+
+/** All-sites shift calendar on the manager Shifts page. */
+export function buildMegaCalendarHref(period?: DashboardPeriodParams | null) {
+  const params =
+    period && period.from && period.to
+      ? new URLSearchParams({ tab: "calendar", from: period.from, to: period.to })
+      : new URLSearchParams({ tab: "calendar" });
+  return `/manager/shifts?${params}`;
 }

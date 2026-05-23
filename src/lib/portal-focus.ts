@@ -12,3 +12,12 @@ export function focusDashboardBackHref(pathname: string, role: string) {
   }
   return role === "admin" ? "/admin" : "/manager";
 }
+
+/** List pages for focus-dashboard shortcut buttons. */
+export function focusDashboardSitesHref(role: string) {
+  return role === "admin" ? "/admin/sites" : "/manager/training";
+}
+
+export function focusDashboardGuardsHref(role: string) {
+  return role === "admin" ? "/admin/users?role=guard" : "/manager/training";
+}

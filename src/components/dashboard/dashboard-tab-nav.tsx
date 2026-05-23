@@ -4,6 +4,8 @@ import { cn } from "@/lib/cn";
 export type DashboardTab = {
   id: string;
   label: string;
+  /** When true, navigating to this tab drops `from`/`to` so the page resolves its own default range. */
+  resetDates?: boolean;
 };
 
 type DashboardTabNavProps = {
@@ -21,7 +23,9 @@ export function DashboardTabNav({ basePath, tabs, activeTab, from, to }: Dashboa
       aria-label="Dashboard sections"
     >
       {tabs.map((tab) => {
-        const params = new URLSearchParams({ from, to, tab: tab.id });
+        const params = tab.resetDates
+          ? new URLSearchParams({ tab: tab.id })
+          : new URLSearchParams({ from, to, tab: tab.id });
         const href = `${basePath}?${params}`;
         const active = activeTab === tab.id;
         return (

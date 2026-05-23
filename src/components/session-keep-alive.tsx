@@ -19,6 +19,11 @@ export function SessionKeepAlive() {
         });
         if (res.status === 200) {
           router.refresh();
+          return;
+        }
+        if (res.status === 401) {
+          if (timerRef.current) clearInterval(timerRef.current);
+          router.replace("/login");
         }
       } catch {
         /* ignore transient network errors */

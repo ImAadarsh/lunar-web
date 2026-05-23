@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { CalendarShiftsView } from "@/components/dashboard/calendar-shifts-view";
+import { DateRangeFilterBar } from "@/components/dashboard/date-range-filter-bar";
 import { ApiErrorNotice } from "@/components/portal/api-error-notice";
 import { PortalDataTable, type PortalDataTableColumn } from "@/components/portal/portal-data-table";
 import { PortalModal } from "@/components/portal/portal-modal";
@@ -35,6 +37,14 @@ import {
   parseSortDir,
   type SortDirection,
 } from "@/lib/portal-table";
+import type { DashboardShiftRow } from "@/lib/dashboard-types";
+import {
+  buildMegaCalendarHref,
+  forwardDashboardDateRange,
+  parseDashboardPeriodSearchParams,
+} from "@/lib/dashboard-period";
+import { ukDateRangeToIsoBounds } from "@/lib/uk-datetime";
+import { UkDateTimeHint } from "@/components/forms/uk-datetime-hint";
 import { getSessionFromCookies } from "@/lib/server-session";
 
 const BASE_PATH = "/manager/shifts";
@@ -81,6 +91,8 @@ type ManagerShiftsPageProps = {
     q?: string;
     page?: string;
     tab?: string;
+    from?: string;
+    to?: string;
     sort?: string;
     dir?: string;
     status?: string;
@@ -88,6 +100,13 @@ type ManagerShiftsPageProps = {
     state?: string;
   }>;
 };
+
+type ShiftsTabId = "shifts" | "availability" | "calendar";
+
+function resolveShiftsTab(tabParam: string | undefined): ShiftsTabId {
+  if (tabParam === "availability" || tabParam === "calendar") return tabParam;
+  return "shifts";
+}
 
 const availabilitySortOrder: Record<GuardAvailabilityState, number> = {
   available: 0,
@@ -128,9 +147,25 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
   const session = await getSessionFromCookies();
   if (!session) redirect("/login");
   if (!["admin", "supervisor"].includes(session.user.role)) redirect("/forbidden");
+  const isAdmin = session.user.role === "admin";
+
+  const params = await searchParams;
+  const activeTab = resolveShiftsTab(params.tab);
+  const periodParams = parseDashboardPeriodSearchParams(
+    params,
+    activeTab === "calendar" ? forwardDashboardDateRange : undefined,
+  );
+  const calendarBounds =
+    activeTab === "calendar" ? ukDateRangeToIsoBounds(periodParams.from, periodParams.to) : null;
+  const calendarShiftQuery = calendarBounds
+    ? new URLSearchParams({ from: calendarBounds.from, to: calendarBounds.to })
+    : null;
 
   const [shiftsRes, sitesRes, usersRes, trainingRes, dutyRosterRes] = await Promise.all([
-    backendApiWithSession<ShiftsResponse>("/shifts", session),
+    backendApiWithSession<ShiftsResponse>(
+      calendarShiftQuery ? `/shifts?${calendarShiftQuery}` : "/shifts",
+      session,
+    ),
     backendApiWithSession<SitesResponse>("/sites", session),
     backendApiWithSession<UsersResponse>("/users?role=guard&limit=200", session),
     backendApiWithSession<TrainingAssignmentsResponse>("/training/assignments", session),
@@ -180,9 +215,6 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
     name,
     availability,
   }));
-
-  const params = await searchParams;
-  const activeTab = params.tab === "availability" ? "availability" : "shifts";
 
   const shiftRows: ShiftTableRow[] = shifts.map((shift) => {
     const user = userById.get(shift.userId);
@@ -241,6 +273,21 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
     [g.name, g.email, guardAvailabilityLabel(g.availability.state), g.availability.state].join(" "),
   );
 
+  const calendarRows: DashboardShiftRow[] = shiftRows.map((row) => ({
+    id: row.id,
+    siteId: row.siteId,
+    siteName: row.siteName,
+    userId: row.userId,
+    guardName: row.guardName,
+    userEmail: row.guardEmail,
+    startsAt: row.startsAt,
+    endsAt: row.endsAt,
+    status: row.status,
+    dutyState: row.dutyState,
+  }));
+
+  const megaCalendarHref = buildMegaCalendarHref(periodParams);
+
   const tabPreserved =
     activeTab === "shifts"
       ? {
@@ -256,7 +303,12 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
             q: params.q,
             state: availStateFilter || undefined,
           }
-        : undefined;
+        : activeTab === "calendar"
+          ? {
+              from: periodParams.from,
+              to: periodParams.to,
+            }
+          : undefined;
 
   const assignShiftModal = (
     <PortalModal
@@ -268,9 +320,16 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
       <form action={assignGuardShiftAction} className="space-y-3">
         <TrainedSiteGuardPicker sites={sites} guards={guardPickerOptions} trainingBySite={trainingBySite} />
         <div className="grid grid-cols-2 gap-2">
-          <input name="startsAt" type="datetime-local" required className="lunar-input" />
-          <input name="endsAt" type="datetime-local" required className="lunar-input" />
+          <label className="text-xs font-semibold text-[var(--portal-text-muted)]">
+            Start (UK)
+            <input name="startsAt" type="datetime-local" required className="mt-1 lunar-input" />
+          </label>
+          <label className="text-xs font-semibold text-[var(--portal-text-muted)]">
+            End (UK)
+            <input name="endsAt" type="datetime-local" required className="mt-1 lunar-input" />
+          </label>
         </div>
+        <UkDateTimeHint />
         <button className="lunar-btn-primary w-full">Save shift</button>
       </form>
     </PortalModal>
@@ -347,6 +406,7 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
           guards={guardPickerOptions}
           trainingBySite={trainingBySite}
           updateShiftAction={updateShiftAction}
+          isAdmin={isAdmin}
         />
       ),
     },
@@ -364,11 +424,20 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
           basePath={BASE_PATH}
           tabs={[
             { id: "shifts", label: "Shifts" },
+            { id: "calendar", label: "Mega calendar" },
             { id: "availability", label: "Guard availability" },
           ]}
           activeTab={activeTab}
           preserved={tabPreserved}
         />
+        {activeTab === "calendar" ? (
+          <DateRangeFilterBar
+            basePath={BASE_PATH}
+            from={periodParams.from}
+            to={periodParams.to}
+            hiddenParams={{ tab: "calendar" }}
+          />
+        ) : null}
         {activeTab === "shifts" ? (
           <PortalTableToolbar
             basePath={BASE_PATH}
@@ -436,8 +505,34 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
       </PortalPageHeader>
 
       <PortalPageTableBody>
-        {activeTab === "shifts" ? (
-          <PortalDataTable
+        {activeTab === "calendar" ? (
+          <div className="lunar-card lunar-card-pad space-y-4">
+            <div>
+              <h3 className="portal-section-title">Mega view calendar</h3>
+              <p className="mt-1 text-sm text-[var(--portal-text-muted)]">
+                All sites and guards in one grid. Click a site row to open that site&apos;s calendar, or a shift block
+                for guard details.
+              </p>
+            </div>
+            <CalendarShiftsView
+              mode="site"
+              from={periodParams.from}
+              to={periodParams.to}
+              shifts={calendarRows}
+              emptyMessage="No shifts in this date range. Adjust the dates above or assign new shifts."
+            />
+          </div>
+        ) : activeTab === "shifts" ? (
+          <>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--portal-border)] bg-[var(--portal-table-row-hover)]/40 px-4 py-3">
+              <p className="text-sm text-[var(--portal-text-muted)]">
+                Need a site-wise overview of every guard? Use the mega calendar for the full grid.
+              </p>
+              <Link href={megaCalendarHref} className="lunar-btn-primary lunar-btn-sm shrink-0">
+                Open mega calendar
+              </Link>
+            </div>
+            <PortalDataTable
             basePath={BASE_PATH}
             query={tableQuery}
             columns={shiftColumns}
@@ -473,6 +568,7 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
               ],
             }}
           />
+          </>
         ) : (
           <ManagerGuardAvailabilityTable rows={filteredGuardRoster} />
         )}

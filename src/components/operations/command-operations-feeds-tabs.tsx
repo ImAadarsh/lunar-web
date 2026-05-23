@@ -1,7 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
+import { ShiftQueueCard, type ShiftQueueItem } from "@/components/operations/shift-queue-card";
 import { cn } from "@/lib/cn";
+import { buildMegaCalendarHref } from "@/lib/dashboard-period";
 
 type FeedTabId = "shifts" | "incidents" | "sos" | "telemetry";
 
@@ -12,19 +15,24 @@ type FeedTab = {
 };
 
 type CommandOperationsFeedsTabsProps = {
+  /** Structured shift rows for the shifts tab (preferred over plain strings). */
+  shiftItems?: ShiftQueueItem[];
   shifts: string[];
   incidents: string[];
   sos: string[];
   telemetry: string[];
   shiftsTabLabel?: string;
+  megaCalendarHref?: string;
 };
 
 export function CommandOperationsFeedsTabs({
+  shiftItems = [],
   shifts,
   incidents,
   sos,
   telemetry,
   shiftsTabLabel = "Shifts",
+  megaCalendarHref = buildMegaCalendarHref(),
 }: CommandOperationsFeedsTabsProps) {
   const tabs: FeedTab[] = [
     { id: "shifts", label: shiftsTabLabel, items: shifts },
@@ -42,6 +50,13 @@ export function CommandOperationsFeedsTabs({
       <p className="mt-1 text-sm text-[var(--portal-text-muted)]">
         Filtered shifts, incidents, SOS, and live guard positions for the selected window.
       </p>
+      {shiftItems.length > 0 ? (
+        <p className="mt-2">
+          <Link href={megaCalendarHref} className="text-sm font-semibold text-[var(--portal-link)] hover:underline">
+            Open mega calendar (all sites)
+          </Link>
+        </p>
+      ) : null}
 
       <nav
         className="mt-4 flex flex-wrap gap-1 border-b border-[var(--portal-border)] pb-px"
@@ -84,6 +99,14 @@ export function CommandOperationsFeedsTabs({
           <p className="rounded-lg border border-dashed border-[var(--portal-border)] bg-[var(--portal-table-row-hover)]/50 px-4 py-8 text-center text-sm text-[var(--portal-text-muted)]">
             No {active.label.toLowerCase()} in this period.
           </p>
+        ) : active.id === "shifts" && shiftItems.length > 0 ? (
+          <ul className="space-y-3">
+            {shiftItems.map((shift) => (
+              <li key={shift.id}>
+                <ShiftQueueCard shift={shift} />
+              </li>
+            ))}
+          </ul>
         ) : (
           <ul className="space-y-2 text-sm">
             {active.items.map((item) => (

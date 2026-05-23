@@ -8,9 +8,11 @@ import { FocusDashboardHeader } from "@/components/portal/focus-dashboard-header
 import { PortalTableCard } from "@/components/portal/portal-table-card";
 import { GuardTrainedSitesTab } from "@/components/dashboard/guard-trained-sites-tab";
 import { ScheduleShiftModal } from "@/components/dashboard/schedule-shift-modal";
+import { WeekScheduleModal } from "@/components/dashboard/week-schedule-modal";
 import { AttendanceTimeline } from "@/components/dashboard/attendance-timeline";
 import { DashboardAlerts } from "@/components/dashboard/dashboard-alerts";
 import { DashboardQuickLinks } from "@/components/dashboard/dashboard-quick-links";
+import { CalendarShiftsView } from "@/components/dashboard/calendar-shifts-view";
 import { DashboardShiftCards } from "@/components/dashboard/dashboard-shift-cards";
 import { DashboardShiftsTable } from "@/components/dashboard/dashboard-shifts-table";
 import { DashboardTabNav } from "@/components/dashboard/dashboard-tab-nav";
@@ -30,13 +32,18 @@ import type { DashboardAlert, RecentAttendanceRow, ShiftGroups } from "@/lib/das
 import { formatUkDateTime } from "@/lib/format-datetime";
 import { shiftDutyLabel } from "@/lib/guard-availability";
 import { displayGuardName } from "@/lib/leave-month-stats";
-import { buildDashboardQuery, parseDashboardPeriodSearchParams } from "@/lib/dashboard-period";
+import {
+  buildDashboardQuery,
+  forwardDashboardDateRange,
+  parseDashboardPeriodSearchParams,
+} from "@/lib/dashboard-period";
 import { getSessionFromCookies } from "@/lib/server-session";
 
 const GUARD_TABS = [
   { id: "overview", label: "Overview" },
   { id: "sites", label: "Trained sites" },
   { id: "shifts", label: "Shifts" },
+  { id: "calendar", label: "Calendar", resetDates: true },
   { id: "hours", label: "Hours" },
   { id: "attendance", label: "Attendance" },
 ] as const;
@@ -104,8 +111,11 @@ export default async function GuardDashboardPage({ params, searchParams }: Guard
   if (!Number.isInteger(userId) || userId <= 0) notFound();
 
   const sp = await searchParams;
-  const periodParams = parseDashboardPeriodSearchParams(sp);
   const tab = GUARD_TABS.some((t) => t.id === sp.tab) ? sp.tab! : "overview";
+  const periodParams = parseDashboardPeriodSearchParams(
+    sp,
+    tab === "calendar" ? forwardDashboardDateRange : undefined,
+  );
 
   const basePath = `/manager/guards/${userId}`;
   const dashRes = await backendApiWithSession<GuardDashboardResponse>(
@@ -129,6 +139,11 @@ export default async function GuardDashboardPage({ params, searchParams }: Guard
   const guardName = displayGuardName(data.user.fullName, data.user.email);
   const availability = mapBackendAvailability(data.availability);
   const canAssign = availability.canAssign;
+  const isAdmin = session.user.role === "admin";
+  const trainedSitesForSchedule = data.trainedSites.map((s) => ({
+    siteId: s.siteId,
+    siteName: s.siteName,
+  }));
   const summary = data.summary ?? {
     upcoming: 0,
     today: 0,
@@ -166,10 +181,16 @@ export default async function GuardDashboardPage({ params, searchParams }: Guard
             status={data.user.status}
             availability={availability}
           />
+          <WeekScheduleModal
+            userId={userId}
+            trainedSites={trainedSitesForSchedule}
+            isAdmin={isAdmin}
+          />
           <ScheduleShiftModal
             userId={userId}
             canAssign={canAssign}
-            trainedSites={data.trainedSites.map((s) => ({ siteId: s.siteId, siteName: s.siteName }))}
+            trainedSites={trainedSitesForSchedule}
+            isAdmin={isAdmin}
           />
         </div>
       </FocusDashboardHeader>
@@ -286,6 +307,16 @@ export default async function GuardDashboardPage({ params, searchParams }: Guard
               emptyMessage="No shifts scheduled yet."
             />
           </PortalTableCard>
+        ) : null}
+
+        {tab === "calendar" ? (
+          <CalendarShiftsView
+            mode="guard"
+            from={periodParams.from}
+            to={periodParams.to}
+            shifts={data.shifts}
+            emptyMessage="No shifts scheduled in this date range."
+          />
         ) : null}
 
         {tab === "hours" ? (

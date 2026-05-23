@@ -1,7 +1,9 @@
 /** UK (Europe/London) date and time display for the portal. */
 
+import { parseApiDateTime, UK_TIME_ZONE as UK_TZ } from "@/lib/uk-datetime";
+
 export const UK_LOCALE = "en-GB";
-export const UK_TIME_ZONE = "Europe/London";
+export const UK_TIME_ZONE = UK_TZ;
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -13,8 +15,7 @@ function toDate(value: string | Date): Date | null {
     const [y, m, d] = v.split("-").map(Number);
     return new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
   }
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? null : d;
+  return parseApiDateTime(v);
 }
 
 function hasTimeComponent(value: string) {

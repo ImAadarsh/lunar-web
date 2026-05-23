@@ -6,8 +6,9 @@
 #
 # Portal URL: https://lunar-web.endeavourdigital.cloud
 # API (public): https://lunar.endeavourdigital.cloud/api/v1
-# Server-side API calls use BACKEND_API_BASE. The script probes private IP from the web host;
-# if unreachable (different VPC / security group), it falls back to the public API hostname.
+# Server-side API calls use BACKEND_API_BASE. The web EC2 host often has NO outbound HTTPS (443);
+# use the backend VPC private IP (auto-detected). Public https://lunar.endeavourdigital.cloud
+# only works from your laptop, not from the web server — do not set it unless 443 egress works.
 #
 # Usage (from lunar_security_web/):
 #   ./deploy_web.sh
@@ -73,9 +74,21 @@ backend_login_reachable() {
   [[ "$code" == "401" || "$code" == "400" ]]
 }
 
+assert_backend_reachable_from_web() {
+  local base="$1"
+  local health="${base%/api/v1}/health"
+  if ! backend_health_ok "$health"; then
+    die "BACKEND_API_BASE not reachable from web host (${health}). Use private IP http://<backend-private-ip>:4000/api/v1 — public HTTPS often times out on the web EC2."
+  fi
+  if ! backend_login_reachable "$base"; then
+    die "BACKEND_API_BASE login probe failed from web host (${base}/auth/login)."
+  fi
+}
+
 resolve_backend_api_base() {
   if [[ -n "${BACKEND_API_BASE:-}" ]]; then
-    log "Using BACKEND_API_BASE from environment."
+    log "Using BACKEND_API_BASE from environment (will verify from web host)."
+    assert_backend_reachable_from_web "$BACKEND_API_BASE"
     printf '%s' "$BACKEND_API_BASE"
     return
   fi
@@ -106,7 +119,7 @@ resolve_backend_api_base() {
     return
   fi
 
-  die "Backend unreachable from web host. Set BACKEND_API_BASE (e.g. ${public_base}) or fix VPC/security groups for port 4000."
+  die "Backend unreachable from web host. Open SG: web → backend TCP 4000, then set BACKEND_API_BASE=http://<private-ip>:4000/api/v1 (public ${public_base} requires outbound 443 on web EC2)."
 }
 
 write_local_env_production() {
@@ -298,8 +311,12 @@ REMOTE_GIT
 
 deploy_env_only() {
   local base
-  base="${BACKEND_API_BASE:-$backend_api_public}"
-  validate_backend_api_base "$base" || die "Set BACKEND_API_BASE to a URL like ${backend_api_public}"
+  if [[ -n "${BACKEND_API_BASE:-}" ]]; then
+    base="$BACKEND_API_BASE"
+  else
+    base="$(resolve_backend_api_base)"
+  fi
+  validate_backend_api_base "$base" || die "Invalid BACKEND_API_BASE"
   chmod 400 "$ssh_key"
   log "Updating server env + PM2 (no build): BACKEND_API_BASE=${base}"
   scp "${ssh_opts[@]}" "${SCRIPT_DIR}/ecosystem.config.cjs" "${ssh_target}:${app_dir}/ecosystem.config.cjs"

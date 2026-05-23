@@ -6,6 +6,7 @@ import { GuardAvailabilityBadge } from "@/components/portal/guard-availability-b
 import { StatusBadge } from "@/components/portal/status-badge";
 import { ModalPortal, useBodyScrollLock } from "@/components/ui/modal-portal";
 import { AvailabilityFilterChips } from "@/components/dashboard/availability-filter-chips";
+import { UkDateTimeHint } from "@/components/forms/uk-datetime-hint";
 import {
   addSiteTrainingAction,
   assignGuardAtSiteAction,
@@ -308,14 +309,15 @@ export function SiteTrainedGuardsSection({
             <input type="hidden" name="userId" value={String(assignTarget.userId)} />
             <div className="grid grid-cols-2 gap-2">
               <label className="block text-sm text-slate-600">
-                Start
+                Start (UK)
                 <input name="startsAt" type="datetime-local" required className="mt-1 w-full lunar-input" />
               </label>
               <label className="block text-sm text-slate-600">
-                End
+                End (UK)
                 <input name="endsAt" type="datetime-local" required className="mt-1 w-full lunar-input" />
               </label>
             </div>
+            <UkDateTimeHint />
             <div className="flex justify-end gap-2 pt-2">
               <button type="button" className="lunar-btn-secondary" onClick={closeAssign}>
                 Cancel

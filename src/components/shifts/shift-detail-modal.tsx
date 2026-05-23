@@ -10,8 +10,12 @@ import {
   type GuardPickerOption,
   type SiteOption,
 } from "@/components/shifts/trained-site-guard-picker";
+import { DutyScheduleHint } from "@/components/dashboard/duty-schedule-hint";
+import { ForceAssignField } from "@/components/dashboard/force-assign-field";
+import { UkDateTimeHint } from "@/components/forms/uk-datetime-hint";
 import { formatUkDateTime } from "@/lib/format-datetime";
 import { shiftDutyLabel } from "@/lib/guard-availability";
+import { isoToUkDateTimeLocal } from "@/lib/uk-datetime";
 
 export type ShiftDetail = {
   id: number;
@@ -26,18 +30,13 @@ export type ShiftDetail = {
   dutyState?: string | null;
 };
 
-function toLocalInputValue(value: string) {
-  const d = new Date(value);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
 type ShiftDetailModalProps = {
   shift: ShiftDetail;
   sites: SiteOption[];
   guards: GuardPickerOption[];
   trainingBySite: Record<string, number[]>;
   updateShiftAction: (formData: FormData) => void | Promise<void>;
+  isAdmin?: boolean;
 };
 
 export function ShiftDetailModal({
@@ -46,6 +45,7 @@ export function ShiftDetailModal({
   guards,
   trainingBySite,
   updateShiftAction,
+  isAdmin = false,
 }: ShiftDetailModalProps) {
   const terminal = shift.status === "cancelled" || shift.status === "completed";
 
@@ -89,6 +89,7 @@ export function ShiftDetailModal({
       {!terminal ? (
         <>
           <h3 className="portal-section-title mt-5">Edit shift</h3>
+          <DutyScheduleHint />
           <form action={updateShiftAction} className="mt-3 space-y-3">
             <input type="hidden" name="id" value={String(shift.id)} />
             <TrainedSiteGuardPicker
@@ -100,26 +101,27 @@ export function ShiftDetailModal({
             />
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="block text-sm text-[var(--portal-text-muted)]">
-                Start
+                Start (UK)
                 <input
                   name="startsAt"
                   type="datetime-local"
                   required
-                  defaultValue={toLocalInputValue(shift.startsAt)}
+                  defaultValue={isoToUkDateTimeLocal(shift.startsAt)}
                   className="mt-1 w-full lunar-input"
                 />
               </label>
               <label className="block text-sm text-[var(--portal-text-muted)]">
-                End
+                End (UK)
                 <input
                   name="endsAt"
                   type="datetime-local"
                   required
-                  defaultValue={toLocalInputValue(shift.endsAt)}
+                  defaultValue={isoToUkDateTimeLocal(shift.endsAt)}
                   className="mt-1 w-full lunar-input"
                 />
               </label>
             </div>
+            <UkDateTimeHint />
             <label className="block text-sm text-[var(--portal-text-muted)]">
               Status
               <select name="status" defaultValue={shift.status} className="mt-1 w-full lunar-select capitalize">
@@ -129,6 +131,7 @@ export function ShiftDetailModal({
                 <option value="cancelled">Cancelled</option>
               </select>
             </label>
+            <ForceAssignField isAdmin={isAdmin} />
             <button type="submit" className="lunar-btn-primary w-full sm:w-auto">
               Save changes
             </button>

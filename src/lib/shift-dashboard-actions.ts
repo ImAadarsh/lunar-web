@@ -5,6 +5,11 @@ import { mutateBackend } from "@/lib/portal-mutations";
 import { parseBulkIds } from "@/lib/portal-table";
 import { backendApiWithSession } from "@/lib/backend";
 import { getSessionFromCookies } from "@/lib/server-session";
+import { ukDateTimeLocalToIso } from "@/lib/uk-datetime";
+
+function parseForceAssign(formData: FormData) {
+  return formData.get("force") === "1" || formData.get("force") === "on";
+}
 
 export async function assignGuardShiftAction(formData: FormData) {
   const userId = Number(formData.get("userId"));
@@ -16,9 +21,37 @@ export async function assignGuardShiftAction(formData: FormData) {
   await mutateBackend("/shifts", "POST", {
     siteId,
     userId,
-    startsAt: new Date(startsAt).toISOString(),
-    endsAt: new Date(endsAt).toISOString(),
+    startsAt: ukDateTimeLocalToIso(startsAt),
+    endsAt: ukDateTimeLocalToIso(endsAt),
     status: "scheduled",
+    ...(parseForceAssign(formData) ? { force: true } : {}),
+  });
+
+  revalidatePath(`/manager/guards/${userId}`);
+  revalidatePath(`/manager/sites/${siteId}`);
+  revalidatePath("/manager/shifts");
+}
+
+export async function bulkScheduleShiftsAction(formData: FormData) {
+  const userId = Number(formData.get("userId"));
+  const siteId = Number(formData.get("siteId"));
+  const count = Number(formData.get("shiftCount") ?? 0);
+  if (!userId || !siteId || !count) return;
+
+  const shifts: Array<{ startsAt: string; endsAt: string }> = [];
+  for (let i = 0; i < count; i += 1) {
+    const startsAt = String(formData.get(`shift_${i}_startsAt`) ?? "");
+    const endsAt = String(formData.get(`shift_${i}_endsAt`) ?? "");
+    if (!startsAt || !endsAt) continue;
+    shifts.push({ startsAt: ukDateTimeLocalToIso(startsAt), endsAt: ukDateTimeLocalToIso(endsAt) });
+  }
+  if (!shifts.length) return;
+
+  await mutateBackend("/shifts/bulk-schedule", "POST", {
+    userId,
+    siteId,
+    shifts,
+    ...(parseForceAssign(formData) ? { force: true } : {}),
   });
 
   revalidatePath(`/manager/guards/${userId}`);
@@ -70,9 +103,10 @@ export async function updateShiftAction(formData: FormData) {
   await mutateBackend(`/shifts/${id}`, "PATCH", {
     siteId,
     userId,
-    startsAt: new Date(startsAt).toISOString(),
-    endsAt: new Date(endsAt).toISOString(),
+    startsAt: ukDateTimeLocalToIso(startsAt),
+    endsAt: ukDateTimeLocalToIso(endsAt),
     status,
+    ...(parseForceAssign(formData) ? { force: true } : {}),
   });
 
   revalidatePath(`/manager/guards/${userId}`);

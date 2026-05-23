@@ -26,6 +26,12 @@ const links: PortalNavLink[] = [
   { href: "/manager", label: "Overview", roles: ["admin", "supervisor"], icon: <IconDashboard /> },
   { href: "/manager/command-center", label: "Command Center", roles: ["admin", "supervisor"], icon: <IconRadio /> },
   { href: "/manager/shifts", label: "Shifts", roles: ["admin", "supervisor"], icon: <IconCalendar /> },
+  {
+    href: "/manager/shifts?tab=calendar",
+    label: "Mega calendar",
+    roles: ["admin", "supervisor"],
+    icon: <IconCalendar />,
+  },
   { href: "/manager/incidents", label: "Incidents & SOS", roles: ["admin", "supervisor"], icon: <IconAlert /> },
   { href: "/manager/leave", label: "Leave", roles: ["admin", "supervisor"], icon: <IconCalendar /> },
   { href: "/manager/training", label: "Training", roles: ["admin", "supervisor"], icon: <IconBadge /> },
