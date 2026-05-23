@@ -142,7 +142,6 @@ install_linux_swc_on_server() {
   local ver="$1"
   local tmp
   tmp="$(mktemp -d)"
-  trap 'rm -rf "$tmp"' RETURN
   log "Packaging @next/swc-linux-x64-gnu@${ver} for Linux server…"
   (cd "$tmp" && npm pack "@next/swc-linux-x64-gnu@${ver}" >/dev/null)
   local tgz
@@ -150,6 +149,7 @@ install_linux_swc_on_server() {
   remote "mkdir -p '${app_dir}/node_modules/@next'"
   scp "${ssh_opts[@]}" "$tgz" "${ssh_target}:/tmp/next-swc-linux.tgz"
   remote "rm -rf '${app_dir}/node_modules/@next/swc-linux-x64-gnu' && mkdir -p '${app_dir}/node_modules/@next/swc-linux-x64-gnu' && tar -xzf /tmp/next-swc-linux.tgz -C '${app_dir}/node_modules/@next/swc-linux-x64-gnu' --strip-components=1 && rm -f /tmp/next-swc-linux.tgz"
+  rm -rf "$tmp"
   log "Installed Linux SWC on server."
 }
 

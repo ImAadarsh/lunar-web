@@ -1,6 +1,6 @@
 /** Week roster helpers — shared by manual week form and CSV import. */
 
-import { ukDateTimeLocalToIso, ukTodayDate } from "@/lib/uk-datetime";
+import { ukDateTimeLocalToIso } from "@/lib/uk-datetime";
 
 export const WEEK_SCHEDULE_CSV_TEMPLATE = `date,start,end
 2025-05-20,21:00,06:00
