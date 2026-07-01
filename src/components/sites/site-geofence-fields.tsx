@@ -2,18 +2,25 @@
 
 import {
   Autocomplete,
-  DrawingManager,
   GoogleMap,
   Marker,
   Polygon,
+  Polyline,
   useJsApiLoader,
   type Libraries,
 } from "@react-google-maps/api";
 import { useCallback, useMemo, useRef, useState } from "react";
 
-const libraries: Libraries = ["places", "drawing"];
+const libraries: Libraries = ["places"];
 const defaultCenter = { lat: 53.48, lng: -2.24 };
 const mapLoaderId = "lunar-google-maps-site-geofence";
+
+const polygonStyle = {
+  fillColor: "#4690bc",
+  fillOpacity: 0.25,
+  strokeColor: "#082334",
+  strokeWeight: 2,
+};
 
 export type LatLngPoint = { lat: number; lng: number };
 
@@ -80,9 +87,10 @@ export function SiteGeofenceFields({ initial, showStatus = false }: SiteGeofence
   const [polygonJson, setPolygonJson] = useState(
     initialPolygon.length > 0 ? JSON.stringify(initialPolygon) : ""
   );
+  const [drawingMode, setDrawingMode] = useState(false);
+  const [draftPoints, setDraftPoints] = useState<LatLngPoint[]>([]);
 
   const polygonRef = useRef<google.maps.Polygon | null>(null);
-  const drawingManagerRef = useRef<google.maps.drawing.DrawingManager | null>(null);
 
   const { isLoaded, loadError } = useJsApiLoader({
     id: mapLoaderId,
@@ -114,15 +122,6 @@ export function SiteGeofenceFields({ initial, showStatus = false }: SiteGeofence
     setLng(nextLng.toFixed(6));
   }, [autocomplete, address, name]);
 
-  const onPolygonComplete = useCallback(
-    (polygon: google.maps.Polygon) => {
-      const points = pathFromGooglePolygon(polygon);
-      polygon.setMap(null);
-      syncPolygon(points);
-    },
-    [syncPolygon]
-  );
-
   const onPolygonEdit = useCallback(() => {
     if (polygonRef.current) {
       syncPolygon(pathFromGooglePolygon(polygonRef.current));
@@ -133,7 +132,40 @@ export function SiteGeofenceFields({ initial, showStatus = false }: SiteGeofence
     polygonRef.current?.setMap(null);
     polygonRef.current = null;
     syncPolygon([]);
+    setDraftPoints([]);
+    setDrawingMode(false);
   }, [syncPolygon]);
+
+  const startDrawing = useCallback(() => {
+    setDrawingMode(true);
+    setDraftPoints([]);
+  }, []);
+
+  const cancelDrawing = useCallback(() => {
+    setDrawingMode(false);
+    setDraftPoints([]);
+  }, []);
+
+  const undoDraftPoint = useCallback(() => {
+    setDraftPoints((points) => points.slice(0, -1));
+  }, []);
+
+  const finishDrawing = useCallback(() => {
+    if (draftPoints.length < 3) return;
+    syncPolygon(draftPoints);
+    setDraftPoints([]);
+    setDrawingMode(false);
+  }, [draftPoints, syncPolygon]);
+
+  const onMapClick = useCallback(
+    (event: google.maps.MapMouseEvent) => {
+      if (!drawingMode) return;
+      const next = event.latLng;
+      if (!next) return;
+      setDraftPoints((points) => [...points, { lat: next.lat(), lng: next.lng() }]);
+    },
+    [drawingMode]
+  );
 
   const addressInput = (
     <input
@@ -167,7 +199,7 @@ export function SiteGeofenceFields({ initial, showStatus = false }: SiteGeofence
           <div className="mt-1 space-y-2">
             {addressInput}
             <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
-              Google Maps failed to load. Enable Maps JavaScript API, Places API, and Drawing library.
+              Google Maps failed to load. Enable Maps JavaScript API and Places API.
             </p>
           </div>
         ) : isLoaded ? (
@@ -241,32 +273,60 @@ export function SiteGeofenceFields({ initial, showStatus = false }: SiteGeofence
         <div className="space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-medium text-slate-700">Geofence area</p>
-            {polygonPath.length > 0 ? (
-              <button
-                type="button"
-                onClick={clearPolygon}
-                className="lunar-btn-secondary lunar-btn-sm"
-              >
-                Clear polygon
-              </button>
-            ) : null}
+            <div className="flex flex-wrap gap-2">
+              {drawingMode ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={undoDraftPoint}
+                    disabled={draftPoints.length === 0}
+                    className="lunar-btn-secondary lunar-btn-sm disabled:opacity-50"
+                  >
+                    Undo point
+                  </button>
+                  <button
+                    type="button"
+                    onClick={finishDrawing}
+                    disabled={draftPoints.length < 3}
+                    className="lunar-btn-primary lunar-btn-sm disabled:opacity-50"
+                  >
+                    Finish ({draftPoints.length} pts)
+                  </button>
+                  <button type="button" onClick={cancelDrawing} className="lunar-btn-secondary lunar-btn-sm">
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <button type="button" onClick={startDrawing} className="lunar-btn-primary lunar-btn-sm">
+                  {polygonPath.length >= 3 ? "Redraw boundary" : "Draw boundary"}
+                </button>
+              )}
+              {polygonPath.length > 0 && !drawingMode ? (
+                <button type="button" onClick={clearPolygon} className="lunar-btn-secondary lunar-btn-sm">
+                  Clear polygon
+                </button>
+              ) : null}
+            </div>
           </div>
           <p className="text-xs text-slate-500">
-            Use the polygon tool on the map to draw the patrol boundary. Drag corners to adjust. You
-            can also keep a radius above as a simple circular fallback.
+            {drawingMode
+              ? "Click the map to place each corner of the patrol boundary. Use Finish when you have at least 3 points, then drag corners to adjust."
+              : "Draw a polygon boundary on the map, or keep a radius above as a simple circular fallback."}
           </p>
           <GoogleMap
-            mapContainerClassName="h-64 w-full rounded-xl border border-slate-200 sm:h-72"
+            mapContainerClassName={`h-64 w-full rounded-xl border border-slate-200 sm:h-72 ${drawingMode ? "cursor-crosshair" : ""}`}
             center={position}
             zoom={lat && lng ? 16 : 10}
+            onClick={onMapClick}
             options={{
               disableDefaultUI: true,
               zoomControl: true,
               mapTypeControl: true,
               streetViewControl: false,
+              draggableCursor: drawingMode ? "crosshair" : undefined,
             }}
           >
-            {lat && lng ? (
+            {lat && lng && !drawingMode ? (
               <Marker
                 position={position}
                 draggable
@@ -278,7 +338,28 @@ export function SiteGeofenceFields({ initial, showStatus = false }: SiteGeofence
                 }}
               />
             ) : null}
-            {polygonPath.length >= 3 ? (
+            {drawingMode && draftPoints.length > 0 ? (
+              <Polyline
+                path={draftPoints}
+                options={{
+                  strokeColor: polygonStyle.strokeColor,
+                  strokeWeight: 2,
+                  strokeOpacity: 0.9,
+                }}
+              />
+            ) : null}
+            {drawingMode && draftPoints.length >= 3 ? (
+              <Polygon
+                path={draftPoints}
+                options={{
+                  ...polygonStyle,
+                  fillOpacity: 0.15,
+                  editable: false,
+                  draggable: false,
+                }}
+              />
+            ) : null}
+            {!drawingMode && polygonPath.length >= 3 ? (
               <Polygon
                 path={polygonPath}
                 onLoad={(polygon) => {
@@ -288,10 +369,7 @@ export function SiteGeofenceFields({ initial, showStatus = false }: SiteGeofence
                   polygonRef.current = null;
                 }}
                 options={{
-                  fillColor: "#4690bc",
-                  fillOpacity: 0.25,
-                  strokeColor: "#082334",
-                  strokeWeight: 2,
+                  ...polygonStyle,
                   editable: true,
                   draggable: false,
                 }}
@@ -299,33 +377,19 @@ export function SiteGeofenceFields({ initial, showStatus = false }: SiteGeofence
                 onDragEnd={onPolygonEdit}
               />
             ) : null}
-            <DrawingManager
-              onLoad={(manager) => {
-                drawingManagerRef.current = manager;
-              }}
-              onPolygonComplete={onPolygonComplete}
-              options={{
-                drawingControl: true,
-                drawingControlOptions: {
-                  position: google.maps.ControlPosition.TOP_CENTER,
-                  drawingModes: [google.maps.drawing.OverlayType.POLYGON],
-                },
-                polygonOptions: {
-                  fillColor: "#4690bc",
-                  fillOpacity: 0.25,
-                  strokeColor: "#082334",
-                  strokeWeight: 2,
-                  editable: true,
-                },
-              }}
-            />
           </GoogleMap>
-          {polygonPath.length > 0 ? (
+          {drawingMode ? (
+            <p className="text-xs text-sky-700">
+              Drawing mode · {draftPoints.length} point{draftPoints.length === 1 ? "" : "s"} placed
+              {draftPoints.length < 3 ? " (need at least 3)" : ""}
+            </p>
+          ) : polygonPath.length > 0 ? (
             <p className="text-xs text-emerald-700">
-              Polygon set · {polygonPath.length} point{polygonPath.length === 1 ? "" : "s"}
+              Polygon set · {polygonPath.length} point{polygonPath.length === 1 ? "" : "s"} — drag corners to
+              adjust
             </p>
           ) : (
-            <p className="text-xs text-amber-700">No polygon drawn yet — use the shape tool on the map.</p>
+            <p className="text-xs text-amber-700">No polygon drawn yet — click Draw boundary to start.</p>
           )}
         </div>
       ) : null}
@@ -334,8 +398,8 @@ export function SiteGeofenceFields({ initial, showStatus = false }: SiteGeofence
 
       {!key ? (
         <p className="text-xs text-slate-500">
-          Add <code className="text-xs">NEXT_PUBLIC_GOOGLE_MAPS_API_KEY</code> to enable map search and
-          polygon drawing.
+          Add <code className="text-xs">NEXT_PUBLIC_GOOGLE_MAPS_API_KEY</code> to enable map search and polygon
+          drawing.
         </p>
       ) : null}
     </div>
