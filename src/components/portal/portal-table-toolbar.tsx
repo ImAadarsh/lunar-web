@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SearchableSelect } from "@/components/forms/searchable-select";
 import { buildPortalTableHref, type PortalTableParams } from "@/lib/portal-table";
 import { cn } from "@/lib/cn";
 
@@ -16,6 +17,16 @@ export type PortalTableFilterField =
       label: string;
       defaultValue?: string;
       options: Array<{ value: string; label: string }>;
+    }
+  | {
+      type: "searchable-select";
+      name: string;
+      label: string;
+      defaultValue?: string;
+      options: Array<{ value: string; label: string }>;
+      emptyLabel?: string;
+      searchPlaceholder?: string;
+      placeholder?: string;
     };
 
 type PortalTableToolbarProps = {
@@ -70,6 +81,21 @@ export function PortalTableToolbar({
                 defaultValue={field.defaultValue ?? ""}
                 placeholder={field.placeholder}
                 className="w-full lunar-input"
+              />
+            </label>
+          );
+        }
+        if (field.type === "searchable-select") {
+          return (
+            <label key={field.name} className="flex min-w-0 flex-col gap-1.5 text-sm text-[var(--portal-text-muted)]">
+              {field.label}
+              <SearchableSelect
+                name={field.name}
+                options={field.options.filter((o) => o.value !== "")}
+                defaultValue={field.defaultValue ?? ""}
+                emptyLabel={field.emptyLabel}
+                placeholder={field.placeholder ?? field.label}
+                searchPlaceholder={field.searchPlaceholder ?? `Search ${field.label.toLowerCase()}…`}
               />
             </label>
           );

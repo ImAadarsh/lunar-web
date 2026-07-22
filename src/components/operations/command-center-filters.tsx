@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { SearchableSelect } from "@/components/forms/searchable-select";
 
 type SiteOption = { id: number; name: string };
 
@@ -47,14 +48,14 @@ export function CommandCenterFilters({
 
   return (
     <form method="get" className="grid gap-2 md:grid-cols-5">
-      <select name="siteId" defaultValue={siteId ? String(siteId) : ""} className="lunar-input">
-        <option value="">All sites</option>
-        {sites.map((site) => (
-          <option key={site.id} value={site.id}>
-            {site.name}
-          </option>
-        ))}
-      </select>
+      <SearchableSelect
+        name="siteId"
+        defaultValue={siteId ? String(siteId) : ""}
+        emptyLabel="All sites"
+        searchPlaceholder="Search sites…"
+        placeholder="Site"
+        options={sites.map((site) => ({ value: String(site.id), label: site.name }))}
+      />
       <select
         name="shiftStatus"
         value={shiftStatus}
@@ -76,7 +77,12 @@ export function CommandCenterFilters({
         <option value="acknowledged">acknowledged SOS</option>
         <option value="resolved">resolved SOS</option>
       </select>
-      <select name="hours" defaultValue={String(hours)} className="lunar-input" aria-label={upcomingShifts ? "Upcoming time window" : "Past time window"}>
+      <select
+        name="hours"
+        defaultValue={String(hours)}
+        className="lunar-input"
+        aria-label={upcomingShifts ? "Upcoming time window" : "Past time window"}
+      >
         {timeOptions.map((opt) => (
           <option key={opt.value} value={opt.value}>
             {opt.label}

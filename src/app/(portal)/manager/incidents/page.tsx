@@ -75,7 +75,7 @@ export default async function ManagerIncidentsPage({ searchParams }: ManagerInci
       session
     ),
     backendApiWithSession<SosResponse>("/sos", session),
-    backendApiWithSession<SiteList>("/sites?limit=200", session),
+    backendApiWithSession<SiteList>("/sites?limit=1000", session),
   ]);
   const allIncidents = incidentsRes.data?.items ?? [];
   const sites = sitesRes.data?.items ?? [];
@@ -196,14 +196,13 @@ export default async function ManagerIncidentsPage({ searchParams }: ManagerInci
                 ],
               },
               {
-                type: "select",
+                type: "searchable-select",
                 name: "siteId",
                 label: "Site",
                 defaultValue: siteIdFilter ? String(siteIdFilter) : "",
-                options: [
-                  { value: "", label: "All sites" },
-                  ...sites.map((site) => ({ value: String(site.id), label: site.name })),
-                ],
+                emptyLabel: "All sites",
+                searchPlaceholder: "Search sites…",
+                options: sites.map((site) => ({ value: String(site.id), label: site.name })),
               },
             ]}
           />

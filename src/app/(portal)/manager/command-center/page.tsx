@@ -112,7 +112,7 @@ export default async function ManagerCommandCenterPage({ searchParams }: Command
   if (siteId) commandParams.set("siteId", String(siteId));
 
   const [sitesRes, shiftsRes, incidentsRes, sosRes, eventsRes, telemetryRes] = await Promise.all([
-    backendApiWithSession<SiteList>("/sites", session),
+    backendApiWithSession<SiteList>("/sites?limit=1000", session),
     backendApiWithSession<ShiftList>(`/shifts?${shiftQuery.toString()}`, session),
     backendApiWithSession<IncidentList>(`/incidents?${incidentQuery.toString()}`, session),
     backendApiWithSession<SosList>("/sos", session),

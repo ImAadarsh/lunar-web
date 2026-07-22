@@ -166,7 +166,7 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
       calendarShiftQuery ? `/shifts?${calendarShiftQuery}` : "/shifts",
       session,
     ),
-    backendApiWithSession<SitesResponse>("/sites", session),
+    backendApiWithSession<SitesResponse>("/sites?limit=1000", session),
     backendApiWithSession<UsersResponse>("/users?role=guard&limit=200", session),
     backendApiWithSession<TrainingAssignmentsResponse>("/training/assignments", session),
     backendApiWithSession<DutyRosterResponse>("/duty/roster", session),
@@ -462,14 +462,19 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
                 ],
               },
               {
-                type: "select",
+                type: "searchable-select",
                 name: "siteId",
                 label: "Site",
                 defaultValue: siteFilter,
-                options: [
-                  { value: "", label: "All sites" },
-                  ...sites.map((site) => ({ value: String(site.id), label: site.name })),
-                ],
+                emptyLabel: "All sites",
+                searchPlaceholder: "Search sites…",
+                options: sites.map((site) => {
+                  const trainedCount = trainingBySite[String(site.id)]?.length ?? 0;
+                  return {
+                    value: String(site.id),
+                    label: `(${trainedCount}) ${site.name}`,
+                  };
+                }),
               },
             ]}
           />

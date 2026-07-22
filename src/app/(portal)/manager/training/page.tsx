@@ -10,6 +10,7 @@ import {
   PortalPageTableBody,
 } from "@/components/portal/portal-page-layout";
 import { AssignTrainingForm } from "@/components/training/assign-training-form";
+import { SearchableSelect } from "@/components/forms/searchable-select";
 import { apiErrorMessage, backendApiWithSession } from "@/lib/backend";
 import { formatUkTrainedOn } from "@/lib/format-datetime";
 import { mutateBackend } from "@/lib/portal-mutations";
@@ -101,7 +102,7 @@ export default async function ManagerTrainingPage({ searchParams }: TrainingPage
     isAdmin
       ? backendApiWithSession<UsersResponse>("/users?limit=500", session)
       : Promise.resolve(null),
-    backendApiWithSession<SitesResponse>("/sites?limit=200", session),
+    backendApiWithSession<SitesResponse>("/sites?limit=1000", session),
   ]);
 
   const allRows = assignmentsRes.data?.items ?? [];
@@ -278,14 +279,14 @@ export default async function ManagerTrainingPage({ searchParams }: TrainingPage
             </label>
             <label className="block min-w-0 text-sm text-slate-600">
               Site
-              <select name="siteId" defaultValue={siteId} className="mt-1 w-full lunar-select">
-                <option value="">All sites</option>
-                {sites.map((site) => (
-                  <option key={site.id} value={site.id}>
-                    {site.name}
-                  </option>
-                ))}
-              </select>
+              <SearchableSelect
+                name="siteId"
+                defaultValue={siteId}
+                emptyLabel="All sites"
+                searchPlaceholder="Search sites…"
+                className="mt-1"
+                options={sites.map((site) => ({ value: String(site.id), label: site.name }))}
+              />
             </label>
             <label className="block min-w-0 text-sm text-slate-600">
               Guard

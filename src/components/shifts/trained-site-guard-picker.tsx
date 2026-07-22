@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import { SearchableSelect } from "@/components/forms/searchable-select";
 import { guardAvailabilityLabel, type GuardAvailabilityInfo } from "@/lib/guard-availability";
 
 export type SiteOption = { id: number; name: string };
@@ -18,6 +19,7 @@ type PickerContextValue = {
   guardId: string;
   setGuardId: (id: string) => void;
   guardsForSite: GuardPickerOption[];
+  trainingBySite: Record<string, number[]>;
   siteFieldName: string;
   guardFieldName: string;
   showSiteIdSuffix: boolean;
@@ -83,6 +85,7 @@ export function TrainedSiteGuardPickerProvider({
     guardId: guardStillValid ? guardId : "",
     setGuardId,
     guardsForSite,
+    trainingBySite,
     siteFieldName,
     guardFieldName,
     showSiteIdSuffix,
@@ -96,26 +99,32 @@ type FieldProps = {
   form?: string;
 };
 
-export function TrainedSiteSelectField({ className = "lunar-input", form }: FieldProps) {
-  const { sites, siteId, setSiteId, siteFieldName, showSiteIdSuffix } = usePickerContext();
+export function TrainedSiteSelectField({ className, form }: FieldProps) {
+  const { sites, siteId, setSiteId, siteFieldName, showSiteIdSuffix, trainingBySite } = usePickerContext();
+  const options = useMemo(
+    () =>
+      sites.map((site) => {
+        const trainedCount = trainingBySite[String(site.id)]?.length ?? 0;
+        const label = showSiteIdSuffix
+          ? `(${trainedCount}) ${site.name} (#${site.id})`
+          : `(${trainedCount}) ${site.name}`;
+        return { value: String(site.id), label };
+      }),
+    [sites, trainingBySite, showSiteIdSuffix],
+  );
+
   return (
-    <select
-      form={form}
+    <SearchableSelect
       name={siteFieldName}
-      required
-      className={className}
+      form={form}
+      options={options}
       value={siteId}
-      onChange={(e) => setSiteId(e.target.value)}
-    >
-      <option value="" disabled>
-        Select site
-      </option>
-      {sites.map((site) => (
-        <option key={site.id} value={site.id}>
-          {showSiteIdSuffix ? `${site.name} (#${site.id})` : site.name}
-        </option>
-      ))}
-    </select>
+      onChange={setSiteId}
+      required
+      placeholder="Select site"
+      searchPlaceholder="Search sites…"
+      className={className}
+    />
   );
 }
 

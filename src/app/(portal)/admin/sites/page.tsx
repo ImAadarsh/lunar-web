@@ -11,6 +11,7 @@ import { SiteGeofenceFields } from "@/components/sites/site-geofence-fields";
 import { apiErrorMessage, backendApiWithSession } from "@/lib/backend";
 import { mutateBackend } from "@/lib/portal-mutations";
 import { getSessionFromCookies } from "@/lib/server-session";
+import { buildTrainingBySite } from "@/lib/training-by-site";
 
 type SitesResponse = {
   items: Array<{
@@ -23,37 +24,52 @@ type SitesResponse = {
     geofencePolygon?: unknown;
     isActive: number | boolean;
   }>;
+  page?: number;
+  limit?: number;
+  total?: number;
+};
+
+type TrainingAssignmentsResponse = {
+  items: Array<{ userId: number; siteId: number }>;
 };
 
 type AdminSitesPageProps = {
   searchParams: Promise<{ q?: string; page?: string; success?: string; error?: string }>;
 };
 
+const PAGE_SIZE = 50;
+
 export default async function AdminSitesPage({ searchParams }: AdminSitesPageProps) {
   const session = await getSessionFromCookies();
   if (!session) redirect("/login");
   if (session.user.role !== "admin") redirect("/forbidden");
 
-  const sitesRes = await backendApiWithSession<SitesResponse>("/sites?limit=200", session);
-  const allSites = sitesRes.data?.items ?? [];
-  const loadErrors = [apiErrorMessage("Sites", sitesRes)];
   const params = await searchParams;
-  const PAGE_SIZE = 12;
-  const query = (params.q ?? "").trim().toLowerCase();
+  const query = (params.q ?? "").trim();
   const actionSuccess = (params.success ?? "").trim();
   const actionError = (params.error ?? "").trim();
   const page = Math.max(1, Number(params.page ?? "1") || 1);
-  const filtered = query
-    ? allSites.filter((site) =>
-        [site.name, site.address ?? "", `${site.centerLat}`, `${site.centerLng}`]
-          .join(" ")
-          .toLowerCase()
-          .includes(query)
-      )
-    : allSites;
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+
+  const sitesQuery = new URLSearchParams({
+    page: String(page),
+    limit: String(PAGE_SIZE),
+  });
+  if (query) sitesQuery.set("q", query);
+
+  const [sitesRes, trainingRes] = await Promise.all([
+    backendApiWithSession<SitesResponse>(`/sites?${sitesQuery}`, session),
+    backendApiWithSession<TrainingAssignmentsResponse>("/training/assignments", session),
+  ]);
+  const sites = sitesRes.data?.items ?? [];
+  const trainingBySite = buildTrainingBySite(trainingRes.data?.items ?? []);
+  const trainedCountBySite = (siteId: number) => trainingBySite[String(siteId)]?.length ?? 0;
+  const totalCount = Number(sitesRes.data?.total ?? sites.length);
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
-  const sites = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const loadErrors = [
+    apiErrorMessage("Sites", sitesRes),
+    apiErrorMessage("Training", trainingRes),
+  ];
 
   async function createSiteAction(formData: FormData) {
     "use server";
@@ -189,6 +205,7 @@ export default async function AdminSitesPage({ searchParams }: AdminSitesPagePro
             <thead>
               <tr className="border-b border-slate-200 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <th className="px-3 py-3">Site name</th>
+                <th className="px-3 py-3">Trained guards</th>
                 <th className="px-3 py-3">Address</th>
                 <th className="px-3 py-3">Coordinates</th>
                 <th className="px-3 py-3">Geofence (m)</th>
@@ -199,15 +216,20 @@ export default async function AdminSitesPage({ searchParams }: AdminSitesPagePro
             <tbody>
               {sites.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-3 py-10 text-center text-slate-500">
+                  <td colSpan={7} className="px-3 py-10 text-center text-slate-500">
                     No sites match your search.
                   </td>
                 </tr>
               ) : null}
-              {sites.map((site) => (
+              {sites.map((site) => {
+                const trainedCount = trainedCountBySite(site.id);
+                return (
                 <tr key={site.id} className="border-b border-slate-100 align-top last:border-0 hover:bg-slate-50/60">
                   <td className="px-3 py-3">
-                    <p className="font-medium text-slate-900">{site.name}</p>
+                    <p className="font-medium text-slate-900">
+                      <span className="mr-1.5 tabular-nums text-slate-500">({trainedCount})</span>
+                      {site.name}
+                    </p>
                     <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5">
                       <PortalDetailLink
                         href={`/manager/sites/${site.id}`}
@@ -222,6 +244,15 @@ export default async function AdminSitesPage({ searchParams }: AdminSitesPagePro
                         Checkpoints →
                       </Link>
                     </div>
+                  </td>
+                  <td className="px-3 py-3">
+                    <Link
+                      href={`/manager/training?siteId=${site.id}`}
+                      className="tabular-nums font-semibold text-lunar-800 hover:underline"
+                      title="View training assignments for this site"
+                    >
+                      {trainedCount}
+                    </Link>
                   </td>
                   <td className="px-3 py-3 text-slate-600">
                     <p className="max-w-xs text-sm leading-snug">{site.address?.trim() || "—"}</p>
@@ -279,13 +310,14 @@ export default async function AdminSitesPage({ searchParams }: AdminSitesPagePro
                     </div>
                   </td>
                 </tr>
-              ))}
+              );
+              })}
             </tbody>
           </table>
         </div>
         <div className="mt-3 flex shrink-0 items-center justify-between border-t border-slate-100 pt-3 text-sm">
           <p className="text-slate-500">
-            Showing {sites.length} of {filtered.length} sites
+            Showing {sites.length} of {totalCount} sites
           </p>
           <div className="flex items-center gap-2">
             <Link

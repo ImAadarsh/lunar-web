@@ -1,3 +1,7 @@
+"use client";
+
+import { SearchableSelect } from "@/components/forms/searchable-select";
+
 type SiteOption = { id: number; name: string };
 type GuardOption = { id: number; name: string };
 
@@ -31,14 +35,13 @@ export function PingsFilterBar({
       </label>
       <label className="flex min-w-[10rem] flex-col gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--portal-text-muted)]">
         Site
-        <select name="siteId" defaultValue={siteId} className="lunar-input">
-          <option value="">All sites</option>
-          {sites.map((site) => (
-            <option key={site.id} value={site.id}>
-              {site.name}
-            </option>
-          ))}
-        </select>
+        <SearchableSelect
+          name="siteId"
+          defaultValue={siteId}
+          emptyLabel="All sites"
+          searchPlaceholder="Search sites…"
+          options={sites.map((site) => ({ value: String(site.id), label: site.name }))}
+        />
       </label>
       <label className="flex min-w-[10rem] flex-col gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--portal-text-muted)]">
         Guard

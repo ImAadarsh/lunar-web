@@ -70,7 +70,7 @@ export default async function ManagerPingsPage({ searchParams }: ManagerPingsPag
   const [threadsRes, summaryRes, sitesRes, usersRes] = await Promise.all([
     backendApiWithSession<ShiftChatsListResponse>(`/shift-chats?${filterQuery}`, session),
     backendApiWithSession<ShiftChatsSummaryResponse>(`/shift-chats/summary?${filterQuery}`, session),
-    backendApiWithSession<SitesResponse>("/sites", session),
+    backendApiWithSession<SitesResponse>("/sites?limit=1000", session),
     backendApiWithSession<UsersResponse>("/users?role=guard&limit=200", session),
   ]);
 

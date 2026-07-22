@@ -1,5 +1,8 @@
+"use client";
+
 import { DutyScheduleHint } from "@/components/dashboard/duty-schedule-hint";
 import { ForceAssignField } from "@/components/dashboard/force-assign-field";
+import { SearchableSelect } from "@/components/forms/searchable-select";
 import { UkDateTimeHint } from "@/components/forms/uk-datetime-hint";
 import { assignGuardShiftAction } from "@/lib/shift-dashboard-actions";
 
@@ -33,16 +36,17 @@ export function AssignShiftFromGuardForm({
       <input type="hidden" name="userId" value={String(userId)} />
       <label className="block text-sm text-slate-600">
         Site (trained only)
-        <select name="siteId" required className="mt-1 w-full lunar-select" defaultValue="">
-          <option value="" disabled>
-            Select trained site
-          </option>
-          {trainedSites.map((site) => (
-            <option key={site.siteId} value={site.siteId}>
-              {site.siteName}
-            </option>
-          ))}
-        </select>
+        <SearchableSelect
+          name="siteId"
+          required
+          placeholder="Select trained site"
+          searchPlaceholder="Search trained sites…"
+          className="mt-1"
+          options={trainedSites.map((site) => ({
+            value: String(site.siteId),
+            label: site.siteName,
+          }))}
+        />
       </label>
       <div className="grid grid-cols-2 gap-2">
         <label className="block text-sm text-slate-600">

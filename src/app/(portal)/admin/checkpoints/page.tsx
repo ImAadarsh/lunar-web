@@ -32,7 +32,7 @@ export default async function AdminCheckpointsPage({ searchParams }: Checkpoints
   if (session.user.role !== "admin") redirect("/forbidden");
 
   const params = await searchParams;
-  const sitesRes = await backendApiWithSession<SitesResponse>("/sites?limit=200", session);
+  const sitesRes = await backendApiWithSession<SitesResponse>("/sites?limit=1000", session);
   const sites = sitesRes.data?.items ?? [];
   const siteId = Number(params.siteId) || sites[0]?.id;
   const selectedSite = sites.find((s) => s.id === siteId);
@@ -136,10 +136,12 @@ export default async function AdminCheckpointsPage({ searchParams }: Checkpoints
                 defaultValue: searchQuery,
               },
               {
-                type: "select",
+                type: "searchable-select",
                 name: "siteId",
                 label: "Site",
                 defaultValue: String(siteId),
+                searchPlaceholder: "Search sites…",
+                placeholder: "Select site",
                 options: sites.map((site) => ({ value: String(site.id), label: site.name })),
               },
             ]}
