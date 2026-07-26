@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
+import { useMemo } from "react";
 import { PortalClientDataTable, type PortalClientColumn } from "@/components/portal/portal-client-data-table";
 import { PortalTabNav } from "@/components/portal/portal-tab-nav";
 import { PortalTableCard } from "@/components/portal/portal-table-card";
 import { StatusBadge } from "@/components/portal/status-badge";
+import { cn } from "@/lib/cn";
 import { formatUkDateRange, formatUkDateTime, formatUkRange } from "@/lib/format-datetime";
 import { shiftDutyLabel } from "@/lib/guard-availability";
 import { displayGuardName } from "@/lib/leave-month-stats";
@@ -52,13 +53,54 @@ type OverviewTab = "shifts" | "leave" | "users" | "audit";
 
 const OVERVIEW_BASE_PATH = "/manager";
 
+/** Coloured chip tone per shift — duty state first, then status. Assigned = orange. */
+function shiftRowTone(shift: ShiftRow): string {
+  if (shift.status === "cancelled") {
+    return "border-[var(--portal-border)] bg-[var(--portal-table-row-hover)] text-[var(--portal-text-muted)] line-through";
+  }
+  switch (shift.dutyState) {
+    case "on_duty":
+      return "border-sky-300 bg-sky-100 text-sky-900";
+    case "missed_duty":
+      return "border-rose-300 bg-rose-100 text-rose-900";
+    case "duty_not_started":
+      return "border-amber-300 bg-amber-100 text-amber-900";
+    case "assigned":
+      return "border-orange-300 bg-orange-100 text-orange-900";
+    default:
+      break;
+  }
+  if (shift.status === "completed") {
+    return "border-emerald-300 bg-emerald-50 text-emerald-900";
+  }
+  if (shift.status === "active") {
+    return "border-sky-300 bg-sky-100 text-sky-900";
+  }
+  return "border-indigo-300 bg-indigo-50 text-indigo-900";
+}
+
+/** Status-only tone for the Status pill. */
+function shiftStatusTone(status: string): string {
+  switch (status) {
+    case "completed":
+      return "border-emerald-300 bg-emerald-50 text-emerald-900";
+    case "active":
+      return "border-sky-300 bg-sky-100 text-sky-900";
+    case "missed":
+      return "border-rose-300 bg-rose-100 text-rose-900";
+    case "cancelled":
+      return "border-[var(--portal-border)] bg-[var(--portal-table-row-hover)] text-[var(--portal-text-muted)]";
+    default:
+      return "border-indigo-300 bg-indigo-50 text-indigo-900";
+  }
+}
+
 type ManagerOverviewTablesProps = {
   shifts: ShiftRow[];
   pendingLeave: LeaveRow[];
   users: UserRow[];
   audits: AuditRow[];
   isAdmin: boolean;
-  filterHint?: string;
 };
 
 export function ManagerOverviewTables({
@@ -67,9 +109,7 @@ export function ManagerOverviewTables({
   users,
   audits,
   isAdmin,
-  filterHint,
 }: ManagerOverviewTablesProps) {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab");
 
@@ -80,13 +120,6 @@ export function ManagerOverviewTables({
     return "shifts";
   }, [tabParam, isAdmin]);
 
-  useEffect(() => {
-    if (!filterHint) return;
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("tab", "shifts");
-    router.replace(`${OVERVIEW_BASE_PATH}?${params.toString()}`);
-  }, [filterHint, router, searchParams]);
-
   const shiftColumns: PortalClientColumn<ShiftRow>[] = [
     {
       id: "site",
@@ -94,7 +127,7 @@ export function ManagerOverviewTables({
       sortable: true,
       sortValue: (r) => r.siteName ?? "",
       render: (shift) => (
-        <Link href={`/manager/sites/${shift.siteId}`} className="portal-link font-medium">
+        <Link href={`/manager/sites/${shift.siteId}?tab=calendar`} className="portal-link font-medium">
           {shift.siteName ?? `Site ${shift.siteId}`}
         </Link>
       ),
@@ -106,7 +139,7 @@ export function ManagerOverviewTables({
       sortValue: (r) => displayGuardName(r.guardName, r.userEmail),
       render: (shift) => (
         <div>
-          <Link href={`/manager/guards/${shift.userId}`} className="portal-link font-medium">
+          <Link href={`/manager/guards/${shift.userId}?tab=calendar`} className="portal-link font-medium">
             {displayGuardName(shift.guardName, shift.userEmail)}
           </Link>
           <p className="text-xs text-[var(--portal-text-muted)]">{shift.userEmail}</p>
@@ -118,21 +151,51 @@ export function ManagerOverviewTables({
       label: "Window",
       sortable: true,
       sortValue: (r) => r.startsAt,
-      render: (r) => <span className="text-sm text-[var(--portal-text-muted)]">{formatUkRange(r.startsAt, r.endsAt)}</span>,
+      render: (r) => (
+        <span
+          className={cn(
+            "inline-flex rounded-md border px-2 py-1 text-xs font-medium leading-snug",
+            shiftRowTone(r),
+          )}
+        >
+          {formatUkRange(r.startsAt, r.endsAt)}
+        </span>
+      ),
     },
     {
       id: "duty",
       label: "Duty",
       sortable: true,
       sortValue: (r) => r.dutyState ?? "",
-      render: (r) => (r.dutyState ? shiftDutyLabel(r.dutyState) : "—"),
+      render: (r) =>
+        r.dutyState ? (
+          <span
+            className={cn(
+              "inline-flex rounded-md border px-2 py-0.5 text-xs font-semibold",
+              shiftRowTone(r),
+            )}
+          >
+            {shiftDutyLabel(r.dutyState)}
+          </span>
+        ) : (
+          "—"
+        ),
     },
     {
       id: "status",
       label: "Status",
       sortable: true,
       sortValue: (r) => r.status,
-      render: (r) => <span className="lunar-badge-neutral uppercase">{r.status}</span>,
+      render: (r) => (
+        <span
+          className={cn(
+            "inline-flex rounded-full border px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide",
+            shiftStatusTone(r.status),
+          )}
+        >
+          {r.status}
+        </span>
+      ),
     },
   ];
 
@@ -227,7 +290,7 @@ export function ManagerOverviewTables({
         <div>
           <h2 className="font-display text-lg font-semibold text-[var(--portal-text)]">Operations data</h2>
           <p className="text-sm text-[var(--portal-text-muted)]">
-            {filterHint ?? "Search, sort, and drill into live records."}
+            Search, sort, and drill into live records.
           </p>
         </div>
       </div>
@@ -240,6 +303,14 @@ export function ManagerOverviewTables({
           wrapTable={false}
           title="Upcoming shifts"
           description="Search and sort scheduled assignments."
+          actions={
+            <Link
+              href="/manager/shifts?tab=shifts&status=upcoming"
+              className="lunar-btn-primary lunar-btn-sm shrink-0"
+            >
+              View all Upcoming Shifts
+            </Link>
+          }
         >
           <PortalClientDataTable
             columns={shiftColumns}

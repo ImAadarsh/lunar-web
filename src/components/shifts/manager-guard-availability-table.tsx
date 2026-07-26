@@ -1,35 +1,90 @@
 "use client";
 
+import Link from "next/link";
+import { ScheduleShiftModal } from "@/components/dashboard/schedule-shift-modal";
 import { GuardAvailabilityBadge } from "@/components/portal/guard-availability-badge";
 import { PortalClientDataTable, type PortalClientColumn } from "@/components/portal/portal-client-data-table";
 import { formatUkDateTime } from "@/lib/format-datetime";
-import type { GuardAvailabilityInfo } from "@/lib/guard-availability";
+import { guardAvailabilityLabel, type GuardAvailabilityInfo } from "@/lib/guard-availability";
+import { parseApiDateTime, UK_TIME_ZONE } from "@/lib/uk-datetime";
+
+export type GuardNextShift = {
+  id: number;
+  siteId: number;
+  siteName: string;
+  startsAt: string;
+  endsAt: string;
+};
 
 export type GuardAvailabilityRow = {
   id: number;
   name: string;
   email: string;
   availability: GuardAvailabilityInfo;
+  nextShift?: GuardNextShift | null;
 };
 
-type ManagerGuardAvailabilityTableProps = {
-  rows: GuardAvailabilityRow[];
+export type TrainedSiteOption = {
+  siteId: number;
+  siteName: string;
 };
 
-function readyLabel(availability: GuardAvailabilityInfo) {
-  if (availability.canAssign) return "Now";
+const ukDayFmt = new Intl.DateTimeFormat("en-GB", {
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+  timeZone: UK_TIME_ZONE,
+});
+const ukTimeFmt = new Intl.DateTimeFormat("en-GB", {
+  hour: "numeric",
+  minute: "2-digit",
+  hour12: true,
+  timeZone: UK_TIME_ZONE,
+});
+
+/** Compact UK window, e.g. `Mon 27 Jul, 9:00 am – 5:00 pm` (overnight repeats the end day). */
+function formatShiftWindow(startsAt: string, endsAt: string): string {
+  const start = parseApiDateTime(startsAt);
+  const end = parseApiDateTime(endsAt);
+  if (!start) return "—";
+  const startLabel = `${ukDayFmt.format(start)}, ${ukTimeFmt.format(start)}`;
+  if (!end) return startLabel;
+  const endLabel =
+    ukDayFmt.format(start) === ukDayFmt.format(end)
+      ? ukTimeFmt.format(end)
+      : `${ukDayFmt.format(end)}, ${ukTimeFmt.format(end)}`;
+  return `${startLabel} – ${endLabel}`;
+}
+
+/** Short reason when Assign Now is disabled (mirrors prior "Ready for assignment" copy). */
+function assignBlockedReason(availability: GuardAvailabilityInfo): string {
   if (availability.state === "recharging" && availability.rechargingUntil) {
-    return formatUkDateTime(availability.rechargingUntil);
+    return `Recharging until ${formatUkDateTime(availability.rechargingUntil)}`;
   }
-  if (availability.state === "missed_duty") return "Now (missed duty)";
   if (availability.state === "on_duty" || availability.state === "duty_not_started") {
     return "When current shift ends";
   }
-  if (availability.state === "assigned") return "After upcoming shift";
-  return "—";
+  if (availability.state === "assigned") {
+    return "After upcoming shift";
+  }
+  if (availability.state === "disabled") {
+    return "Account disabled";
+  }
+  return guardAvailabilityLabel(availability.state);
 }
 
-export function ManagerGuardAvailabilityTable({ rows }: ManagerGuardAvailabilityTableProps) {
+type ManagerGuardAvailabilityTableProps = {
+  rows: GuardAvailabilityRow[];
+  /** userId → trained sites for the schedule modal. */
+  trainedSitesByUserId: Record<string, TrainedSiteOption[]>;
+  isAdmin: boolean;
+};
+
+export function ManagerGuardAvailabilityTable({
+  rows,
+  trainedSitesByUserId,
+  isAdmin,
+}: ManagerGuardAvailabilityTableProps) {
   const columns: PortalClientColumn<GuardAvailabilityRow>[] = [
     {
       id: "guard",
@@ -51,6 +106,29 @@ export function ManagerGuardAvailabilityTable({ rows }: ManagerGuardAvailability
       render: (row) => <GuardAvailabilityBadge info={row.availability} />,
     },
     {
+      id: "nextShift",
+      label: "Next shift",
+      sortable: true,
+      sortValue: (r) =>
+        r.nextShift ? parseApiDateTime(r.nextShift.startsAt)?.getTime() ?? Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER,
+      render: (row) =>
+        row.nextShift ? (
+          <div className="min-w-0">
+            <Link
+              href={`/manager/sites/${row.nextShift.siteId}`}
+              className="font-medium text-[var(--portal-link)] hover:underline"
+            >
+              {row.nextShift.siteName}
+            </Link>
+            <p className="whitespace-nowrap text-xs text-[var(--portal-text-muted)]">
+              {formatShiftWindow(row.nextShift.startsAt, row.nextShift.endsAt)}
+            </p>
+          </div>
+        ) : (
+          <span className="text-[var(--portal-text-muted)]">—</span>
+        ),
+    },
+    {
       id: "lastEnded",
       label: "Last duty ended",
       sortable: true,
@@ -59,11 +137,38 @@ export function ManagerGuardAvailabilityTable({ rows }: ManagerGuardAvailability
         row.availability.lastShiftEndedAt ? formatUkDateTime(row.availability.lastShiftEndedAt) : "—",
     },
     {
-      id: "ready",
-      label: "Ready for assignment",
+      id: "assign",
+      label: "Assign",
       sortable: true,
-      sortValue: (r) => readyLabel(r.availability),
-      render: (row) => readyLabel(row.availability),
+      sortValue: (r) => (r.availability.canAssign || isAdmin ? 0 : 1),
+      render: (row) => {
+        const trainedSites = trainedSitesByUserId[String(row.id)] ?? [];
+        // Admins can open the modal to force-assign even when canAssign is false.
+        const canOpen = row.availability.canAssign || isAdmin;
+        if (!canOpen) {
+          const reason = assignBlockedReason(row.availability);
+          return (
+            <button
+              type="button"
+              disabled
+              title={reason}
+              aria-label={`Assign Now unavailable: ${reason}`}
+              className="lunar-btn-secondary lunar-btn-sm cursor-not-allowed opacity-50"
+            >
+              Assign Now
+            </button>
+          );
+        }
+        return (
+          <ScheduleShiftModal
+            userId={row.id}
+            canAssign={row.availability.canAssign}
+            trainedSites={trainedSites}
+            isAdmin={isAdmin}
+            triggerLabel="Assign Now"
+          />
+        );
+      },
     },
   ];
 
@@ -74,8 +179,7 @@ export function ManagerGuardAvailabilityTable({ rows }: ManagerGuardAvailability
       rowKey={(r) => r.id}
       emptyMessage="No guards match your filters."
       defaultSort="guard"
-      minWidth="40rem"
-      pageSize={15}
+      minWidth="52rem"
     />
   );
 }

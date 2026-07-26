@@ -6,7 +6,7 @@ import { ApiErrorNotice } from "@/components/portal/api-error-notice";
 import { PortalDataTable, type PortalDataTableColumn } from "@/components/portal/portal-data-table";
 import { PortalModal } from "@/components/portal/portal-modal";
 import { PortalPage, PortalPageHeader, PortalPageTableBody } from "@/components/portal/portal-page-layout";
-import { PortalTableToolbar } from "@/components/portal/portal-table-toolbar";
+import { PortalTableToolbarDrawer } from "@/components/portal/portal-table-toolbar-drawer";
 import { backendApiWithSession } from "@/lib/backend";
 import { mutateBackend } from "@/lib/portal-mutations";
 import {
@@ -14,6 +14,7 @@ import {
   filterByQuery,
   paginateRows,
   parseBulkIds,
+  parsePortalPageSize,
   parseSortDir,
   type SortDirection,
 } from "@/lib/portal-table";
@@ -25,7 +26,6 @@ import { AdminUserCreateForm } from "@/components/admin/admin-user-create-form";
 import { AdminUsersBulkImport } from "@/components/admin/admin-users-bulk-import";
 
 const BASE_PATH = "/admin/users";
-const PAGE_SIZE = 15;
 const SORT_KEYS = ["name", "email", "role", "status", "phone"] as const;
 
 type UserRow = {
@@ -47,6 +47,7 @@ type AdminUsersPageProps = {
   searchParams: Promise<{
     q?: string;
     page?: string;
+    pageSize?: string;
     sort?: string;
     dir?: string;
     role?: string;
@@ -93,6 +94,7 @@ export default async function AdminUsersPage({ searchParams }: AdminUsersPagePro
   const sort = SORT_KEYS.includes(params.sort as (typeof SORT_KEYS)[number]) ? (params.sort as string) : "name";
   const dir = parseSortDir(params.dir);
   const page = Math.max(1, Number(params.page ?? "1") || 1);
+  const pageSize = parsePortalPageSize(params.pageSize);
   const actionError = (params.error ?? "").trim();
   const importCreated = Number(params.importCreated ?? "0") || 0;
   const importFailed = Number(params.importFailed ?? "0") || 0;
@@ -121,8 +123,8 @@ export default async function AdminUsersPage({ searchParams }: AdminUsersPagePro
   );
 
   const sorted = sortUsers(filtered, sort, dir);
-  const { slice: users, totalCount, totalPages, currentPage } = paginateRows(sorted, page, PAGE_SIZE);
-  const tableQuery = { q: params.q, role: roleFilter, status: statusFilter, sort, dir };
+  const { slice: users, totalCount, totalPages, currentPage } = paginateRows(sorted, page, pageSize);
+  const tableQuery = { q: params.q, role: roleFilter, status: statusFilter, sort, dir, pageSize };
 
   async function createUserAction(formData: FormData) {
     "use server";
@@ -272,7 +274,41 @@ export default async function AdminUsersPage({ searchParams }: AdminUsersPagePro
         title="Users"
         description={`${totalCount} user${totalCount === 1 ? "" : "s"} · open View to edit, suspend, or manage HR`}
         actions={
-          <div className="flex flex-wrap items-center gap-2">
+          <>
+            <PortalTableToolbarDrawer
+              basePath={BASE_PATH}
+              title="User filters"
+              description="Search users and filter by role or status."
+              summary={[roleFilter || null, statusFilter || null].filter(Boolean).join(" · ") || undefined}
+              preserved={{ sort, dir }}
+              fields={[
+                { type: "search", placeholder: "Name, email, phone…", defaultValue: params.q ?? "" },
+                {
+                  type: "select",
+                  name: "role",
+                  label: "Role",
+                  defaultValue: roleFilter,
+                  options: [
+                    { value: "", label: "All roles" },
+                    { value: "guard", label: "Guard" },
+                    { value: "supervisor", label: "Supervisor" },
+                    { value: "admin", label: "Admin" },
+                  ],
+                },
+                {
+                  type: "select",
+                  name: "status",
+                  label: "Status",
+                  defaultValue: statusFilter,
+                  options: [
+                    { value: "", label: "All statuses" },
+                    { value: "active", label: "Active" },
+                    { value: "invited", label: "Invited" },
+                    { value: "suspended", label: "Suspended" },
+                  ],
+                },
+              ]}
+            />
             <PortalModal
               triggerLabel="Bulk import CSV"
               title="Bulk import users"
@@ -291,7 +327,7 @@ export default async function AdminUsersPage({ searchParams }: AdminUsersPagePro
             >
               <AdminUserCreateForm action={createUserAction} />
             </PortalModal>
-          </div>
+          </>
         }
       >
         <ApiErrorNotice errors={usersLoadError ? [usersLoadError] : []} />
@@ -324,37 +360,6 @@ export default async function AdminUsersPage({ searchParams }: AdminUsersPagePro
             ) : null}
           </div>
         ) : null}
-        <PortalTableToolbar
-          basePath={BASE_PATH}
-          preserved={{ sort, dir }}
-          fields={[
-            { type: "search", placeholder: "Name, email, phone…", defaultValue: params.q ?? "" },
-            {
-              type: "select",
-              name: "role",
-              label: "Role",
-              defaultValue: roleFilter,
-              options: [
-                { value: "", label: "All roles" },
-                { value: "guard", label: "Guard" },
-                { value: "supervisor", label: "Supervisor" },
-                { value: "admin", label: "Admin" },
-              ],
-            },
-            {
-              type: "select",
-              name: "status",
-              label: "Status",
-              defaultValue: statusFilter,
-              options: [
-                { value: "", label: "All statuses" },
-                { value: "active", label: "Active" },
-                { value: "invited", label: "Invited" },
-                { value: "suspended", label: "Suspended" },
-              ],
-            },
-          ]}
-        />
       </PortalPageHeader>
 
       <PortalPageTableBody>
@@ -368,7 +373,7 @@ export default async function AdminUsersPage({ searchParams }: AdminUsersPagePro
           page={currentPage}
           totalPages={totalPages}
           totalCount={totalCount}
-          pageSize={PAGE_SIZE}
+          pageSize={pageSize}
           sort={sort}
           dir={dir}
           minWidth="52rem"

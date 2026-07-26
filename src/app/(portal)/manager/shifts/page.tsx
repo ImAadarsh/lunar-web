@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { CalendarShiftsView } from "@/components/dashboard/calendar-shifts-view";
-import { DateRangeFilterBar } from "@/components/dashboard/date-range-filter-bar";
+import { DateRangeFilterDrawer } from "@/components/dashboard/date-range-filter-drawer";
 import { ApiErrorNotice } from "@/components/portal/api-error-notice";
 import { PortalDataTable, type PortalDataTableColumn } from "@/components/portal/portal-data-table";
 import { PortalModal } from "@/components/portal/portal-modal";
@@ -11,7 +11,7 @@ import {
   PortalPageTableBody,
 } from "@/components/portal/portal-page-layout";
 import { PortalTabNav } from "@/components/portal/portal-tab-nav";
-import { PortalTableToolbar } from "@/components/portal/portal-table-toolbar";
+import { PortalTableToolbarDrawer } from "@/components/portal/portal-table-toolbar-drawer";
 import { StatusBadge } from "@/components/portal/status-badge";
 import { ManagerGuardAvailabilityTable } from "@/components/shifts/manager-guard-availability-table";
 import { ShiftDetailModal, type ShiftDetail } from "@/components/shifts/shift-detail-modal";
@@ -26,6 +26,7 @@ import {
   type GuardAvailabilityState,
 } from "@/lib/guard-availability";
 import { displayGuardName } from "@/lib/leave-month-stats";
+import { filterUpcomingShifts } from "@/lib/overview-stats";
 import { assignGuardShiftAction, bulkShiftsAction, updateShiftAction } from "@/lib/shift-dashboard-actions";
 import { buildTrainingBySite } from "@/lib/training-by-site";
 import {
@@ -34,6 +35,7 @@ import {
   compareStrings,
   filterByQuery,
   paginateRows,
+  parsePortalPageSize,
   parseSortDir,
   type SortDirection,
 } from "@/lib/portal-table";
@@ -48,7 +50,6 @@ import { UkDateTimeHint } from "@/components/forms/uk-datetime-hint";
 import { getSessionFromCookies } from "@/lib/server-session";
 
 const BASE_PATH = "/manager/shifts";
-const PAGE_SIZE = 15;
 const SHIFT_SORT_KEYS = ["id", "siteName", "guardName", "startsAt", "endsAt", "duty", "status"] as const;
 
 type ShiftsResponse = {
@@ -73,6 +74,14 @@ type DutyRosterResponse = {
       rechargingUntil?: string | null;
       lastShiftEndedAt?: string | null;
     };
+    primaryShift?: {
+      id: number;
+      siteId: number;
+      siteName?: string | null;
+      startsAt: string;
+      endsAt: string;
+      status: string;
+    } | null;
   }>;
 };
 
@@ -90,6 +99,7 @@ type ManagerShiftsPageProps = {
   searchParams: Promise<{
     q?: string;
     page?: string;
+    pageSize?: string;
     tab?: string;
     from?: string;
     to?: string;
@@ -175,7 +185,8 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
   const shifts = shiftsRes.data?.items ?? [];
   const sites = sitesRes.data?.items ?? [];
   const users = usersRes.data?.items ?? [];
-  const trainingBySite = buildTrainingBySite(trainingRes.data?.items ?? []);
+  const trainingAssignments = trainingRes.data?.items ?? [];
+  const trainingBySite = buildTrainingBySite(trainingAssignments);
 
   const loadErrors = [
     apiErrorMessage("Shifts", shiftsRes),
@@ -188,19 +199,47 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
   const siteById = new Map(sites.map((s) => [s.id, s.name]));
   const userById = new Map(users.map((u) => [u.id, u]));
 
-  const dutyByUser = new Map(
-    (dutyRosterRes.data?.items ?? []).map((row) => [row.userId, mapApiAvailability(row.availability)]),
-  );
+  /** userId → trained sites for Assign Now / ScheduleShiftModal on the availability tab. */
+  const trainedSitesByUserId: Record<string, Array<{ siteId: number; siteName: string }>> = {};
+  for (const row of trainingAssignments) {
+    const key = String(row.userId);
+    if (!trainedSitesByUserId[key]) trainedSitesByUserId[key] = [];
+    trainedSitesByUserId[key].push({
+      siteId: row.siteId,
+      siteName: siteById.get(row.siteId) ?? `Site #${row.siteId}`,
+    });
+  }
+
+  const rosterByUser = new Map((dutyRosterRes.data?.items ?? []).map((row) => [row.userId, row]));
 
   const guardRoster = users
-    .map((guard) => ({
-      id: guard.id,
-      name: displayGuardName(guard.fullName, guard.email),
-      email: guard.email,
-      availability:
-        dutyByUser.get(guard.id) ??
-        mapApiAvailability({ state: "disabled", canAssign: false, rechargingUntil: null, lastShiftEndedAt: null }),
-    }))
+    .map((guard) => {
+      const rosterEntry = rosterByUser.get(guard.id);
+      const availability = rosterEntry
+        ? mapApiAvailability(rosterEntry.availability)
+        : mapApiAvailability({ state: "disabled", canAssign: false, rechargingUntil: null, lastShiftEndedAt: null });
+      // For "assigned" the roster's primaryShift is the guard's next (upcoming) shift.
+      const nextShift =
+        availability.state === "assigned" && rosterEntry?.primaryShift
+          ? {
+              id: rosterEntry.primaryShift.id,
+              siteId: rosterEntry.primaryShift.siteId,
+              siteName:
+                rosterEntry.primaryShift.siteName ??
+                siteById.get(rosterEntry.primaryShift.siteId) ??
+                `Site #${rosterEntry.primaryShift.siteId}`,
+              startsAt: rosterEntry.primaryShift.startsAt,
+              endsAt: rosterEntry.primaryShift.endsAt,
+            }
+          : null;
+      return {
+        id: guard.id,
+        name: displayGuardName(guard.fullName, guard.email),
+        email: guard.email,
+        availability,
+        nextShift,
+      };
+    })
     .sort(
       (a, b) =>
         availabilitySortOrder[a.availability.state] - availabilitySortOrder[b.availability.state] ||
@@ -240,9 +279,12 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
     : "startsAt";
   const dir = parseSortDir(params.dir);
   const page = Math.max(1, Number(params.page ?? "1") || 1);
+  const pageSize = parsePortalPageSize(params.pageSize);
 
   let filteredShifts = shiftRows;
-  if (statusFilter) {
+  if (statusFilter === "upcoming") {
+    filteredShifts = filterUpcomingShifts(filteredShifts);
+  } else if (statusFilter) {
     filteredShifts = filteredShifts.filter((s) => s.status === statusFilter);
   }
   if (siteFilter) {
@@ -253,7 +295,7 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
   );
 
   const sortedShifts = sortShiftRows(filteredShifts, sort, dir);
-  const { slice: pageRows, totalCount, totalPages, currentPage } = paginateRows(sortedShifts, page, PAGE_SIZE);
+  const { slice: pageRows, totalCount, totalPages, currentPage } = paginateRows(sortedShifts, page, pageSize);
 
   const tableQuery = {
     tab: "shifts",
@@ -262,6 +304,7 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
     siteId: siteFilter || undefined,
     sort,
     dir,
+    pageSize,
   };
 
   const availStateFilter = (params.state ?? "").trim();
@@ -270,7 +313,9 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
     filteredGuardRoster = filteredGuardRoster.filter((g) => g.availability.state === availStateFilter);
   }
   filteredGuardRoster = filterByQuery(filteredGuardRoster, params.q ?? "", (g) =>
-    [g.name, g.email, guardAvailabilityLabel(g.availability.state), g.availability.state].join(" "),
+    [g.name, g.email, guardAvailabilityLabel(g.availability.state), g.availability.state, g.nextShift?.siteName ?? ""].join(
+      " ",
+    ),
   );
 
   const calendarRows: DashboardShiftRow[] = shiftRows.map((row) => ({
@@ -334,6 +379,100 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
       </form>
     </PortalModal>
   );
+
+  const headerFilters =
+    activeTab === "calendar" ? (
+      <DateRangeFilterDrawer
+        basePath={BASE_PATH}
+        from={periodParams.from}
+        to={periodParams.to}
+        hiddenParams={{ tab: "calendar" }}
+        title="Calendar filters"
+        description="Set the date range for the mega calendar grid."
+      />
+    ) : activeTab === "shifts" ? (
+      <PortalTableToolbarDrawer
+        basePath={BASE_PATH}
+        title="Shift filters"
+        description="Search and filter the shifts table."
+        summary={
+          [
+            statusFilter === "upcoming" ? "Upcoming" : statusFilter || null,
+            siteFilter ? siteById.get(Number(siteFilter)) ?? `Site #${siteFilter}` : null,
+          ]
+            .filter(Boolean)
+            .join(" · ") || undefined
+        }
+        preserved={{ tab: "shifts", sort, dir }}
+        fields={[
+          {
+            type: "search",
+            placeholder: "Search shift, site, guard, status…",
+            defaultValue: params.q ?? "",
+          },
+          {
+            type: "select",
+            name: "status",
+            label: "Status",
+            defaultValue: statusFilter,
+            options: [
+              { value: "", label: "All statuses" },
+              { value: "upcoming", label: "Upcoming" },
+              { value: "scheduled", label: "Scheduled" },
+              { value: "active", label: "Active" },
+              { value: "completed", label: "Completed" },
+              { value: "cancelled", label: "Cancelled" },
+            ],
+          },
+          {
+            type: "searchable-select",
+            name: "siteId",
+            label: "Site",
+            defaultValue: siteFilter,
+            emptyLabel: "All sites",
+            searchPlaceholder: "Search sites…",
+            options: sites.map((site) => {
+              const trainedCount = trainingBySite[String(site.id)]?.length ?? 0;
+              return {
+                value: String(site.id),
+                label: `(${trainedCount}) ${site.name}`,
+              };
+            }),
+          },
+        ]}
+      />
+    ) : activeTab === "availability" ? (
+      <PortalTableToolbarDrawer
+        basePath={BASE_PATH}
+        title="Availability filters"
+        description="Search guards and filter by availability status."
+        summary={availStateFilter || undefined}
+        preserved={{ tab: "availability" }}
+        fields={[
+          {
+            type: "search",
+            placeholder: "Search guard, email, status…",
+            defaultValue: params.q ?? "",
+          },
+          {
+            type: "select",
+            name: "state",
+            label: "Availability",
+            defaultValue: availStateFilter,
+            options: [
+              { value: "", label: "All statuses" },
+              { value: "available", label: "Available" },
+              { value: "assigned", label: "Assigned" },
+              { value: "duty_not_started", label: "Duty not started" },
+              { value: "on_duty", label: "On duty" },
+              { value: "missed_duty", label: "Missed duty" },
+              { value: "recharging", label: "Recharging" },
+              { value: "disabled", label: "Disabled" },
+            ],
+          },
+        ]}
+      />
+    ) : null;
 
   const shiftColumns: PortalDataTableColumn<ShiftTableRow>[] = [
     {
@@ -417,7 +556,12 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
       <PortalPageHeader
         title="Shifts"
         description={`Schedule guards · ${availableCount} assignable · ${onDutyCount} on duty`}
-        actions={assignShiftModal}
+        actions={
+          <>
+            {headerFilters}
+            {assignShiftModal}
+          </>
+        }
       >
         <ApiErrorNotice errors={loadErrors} />
         <PortalTabNav
@@ -430,102 +574,36 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
           activeTab={activeTab}
           preserved={tabPreserved}
         />
-        {activeTab === "calendar" ? (
-          <DateRangeFilterBar
-            basePath={BASE_PATH}
-            from={periodParams.from}
-            to={periodParams.to}
-            hiddenParams={{ tab: "calendar" }}
-          />
-        ) : null}
-        {activeTab === "shifts" ? (
-          <PortalTableToolbar
-            basePath={BASE_PATH}
-            preserved={{ tab: "shifts", sort, dir }}
-            fields={[
-              {
-                type: "search",
-                placeholder: "Search shift, site, guard, status…",
-                defaultValue: params.q ?? "",
-              },
-              {
-                type: "select",
-                name: "status",
-                label: "Status",
-                defaultValue: statusFilter,
-                options: [
-                  { value: "", label: "All statuses" },
-                  { value: "scheduled", label: "Scheduled" },
-                  { value: "active", label: "Active" },
-                  { value: "completed", label: "Completed" },
-                  { value: "cancelled", label: "Cancelled" },
-                ],
-              },
-              {
-                type: "searchable-select",
-                name: "siteId",
-                label: "Site",
-                defaultValue: siteFilter,
-                emptyLabel: "All sites",
-                searchPlaceholder: "Search sites…",
-                options: sites.map((site) => {
-                  const trainedCount = trainingBySite[String(site.id)]?.length ?? 0;
-                  return {
-                    value: String(site.id),
-                    label: `(${trainedCount}) ${site.name}`,
-                  };
-                }),
-              },
-            ]}
-          />
-        ) : (
-          <PortalTableToolbar
-            basePath={BASE_PATH}
-            preserved={{ tab: "availability" }}
-            fields={[
-              {
-                type: "search",
-                placeholder: "Search guard, email, status…",
-                defaultValue: params.q ?? "",
-              },
-              {
-                type: "select",
-                name: "state",
-                label: "Availability",
-                defaultValue: availStateFilter,
-                options: [
-                  { value: "", label: "All statuses" },
-                  { value: "available", label: "Available" },
-                  { value: "assigned", label: "Assigned" },
-                  { value: "duty_not_started", label: "Duty not started" },
-                  { value: "on_duty", label: "On duty" },
-                  { value: "missed_duty", label: "Missed duty" },
-                  { value: "recharging", label: "Recharging" },
-                  { value: "disabled", label: "Disabled" },
-                ],
-              },
-            ]}
-          />
-        )}
       </PortalPageHeader>
 
       <PortalPageTableBody>
         {activeTab === "calendar" ? (
-          <div className="lunar-card lunar-card-pad space-y-4">
-            <div>
-              <h3 className="portal-section-title">Mega view calendar</h3>
-              <p className="mt-1 text-sm text-[var(--portal-text-muted)]">
-                All sites and guards in one grid. Click a site row to open that site&apos;s calendar, or a shift block
-                for guard details.
-              </p>
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-[var(--portal-border)] px-4 py-3 sm:px-5">
+              <div className="min-w-0">
+                <h3 className="portal-section-title">Mega view calendar</h3>
+                <p className="mt-1 text-sm text-[var(--portal-text-muted)]">
+                  Click a shift block to view, edit, complete, cancel, or delete.
+                </p>
+              </div>
             </div>
-            <CalendarShiftsView
-              mode="site"
-              from={periodParams.from}
-              to={periodParams.to}
-              shifts={calendarRows}
-              emptyMessage="No shifts in this date range. Adjust the dates above or assign new shifts."
-            />
+            <div className="min-h-0 flex-1 overflow-auto overscroll-contain px-4 py-3 sm:px-5 sm:py-4">
+              <CalendarShiftsView
+                mode="site"
+                from={periodParams.from}
+                to={periodParams.to}
+                shifts={calendarRows}
+                emptyMessage="No shifts in this date range. Open Filters to adjust the dates or assign new shifts."
+                embedded
+                shiftDetail={{
+                  sites,
+                  guards: guardPickerOptions,
+                  trainingBySite,
+                  updateShiftAction,
+                  isAdmin,
+                }}
+              />
+            </div>
           </div>
         ) : activeTab === "shifts" ? (
           <>
@@ -547,7 +625,7 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
             page={currentPage}
             totalPages={totalPages}
             totalCount={totalCount}
-            pageSize={PAGE_SIZE}
+            pageSize={pageSize}
             sort={sort}
             dir={dir}
             minWidth="52rem"
@@ -575,7 +653,11 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
           />
           </>
         ) : (
-          <ManagerGuardAvailabilityTable rows={filteredGuardRoster} />
+          <ManagerGuardAvailabilityTable
+            rows={filteredGuardRoster}
+            trainedSitesByUserId={trainedSitesByUserId}
+            isAdmin={isAdmin}
+          />
         )}
       </PortalPageTableBody>
     </PortalPage>

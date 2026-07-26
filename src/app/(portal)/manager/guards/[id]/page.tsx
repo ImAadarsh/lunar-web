@@ -17,7 +17,7 @@ import { DashboardShiftCards } from "@/components/dashboard/dashboard-shift-card
 import { DashboardShiftsTable } from "@/components/dashboard/dashboard-shifts-table";
 import { DashboardTabNav } from "@/components/dashboard/dashboard-tab-nav";
 import { HoursMiniChart } from "@/components/dashboard/hours-mini-chart";
-import { DateRangeFilterBar } from "@/components/dashboard/date-range-filter-bar";
+import { DateRangeFilterDrawer } from "@/components/dashboard/date-range-filter-drawer";
 import { apiErrorMessage, backendApiWithSession } from "@/lib/backend";
 import {
   formatHours,
@@ -194,8 +194,17 @@ export default async function GuardDashboardPage({ params, searchParams }: Guard
           />
         </div>
       </FocusDashboardHeader>
-      <PortalPageHeader>
-        <DateRangeFilterBar basePath={basePath} from={periodParams.from} to={periodParams.to} />
+      <PortalPageHeader
+        actions={
+          <DateRangeFilterDrawer
+            basePath={basePath}
+            from={periodParams.from}
+            to={periodParams.to}
+            title="Date range"
+            description="Choose the period shown on this guard dashboard."
+          />
+        }
+      >
         <DashboardTabNav
           basePath={basePath}
           tabs={[...GUARD_TABS]}

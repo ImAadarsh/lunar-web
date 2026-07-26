@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { ManagerOverviewTables } from "@/components/portal/manager-overview-tables";
 import {
   OverviewBarChart,
@@ -52,7 +52,10 @@ type AuditRow = { id: number; action: string; createdAt: string; entityType: str
 
 type ManagerOverviewDashboardProps = {
   kpis: KpiData | null;
+  /** Full roster sample for charts (all statuses). */
   shifts: ShiftRow[];
+  /** Future scheduled shifts only — feeds the Upcoming shifts table. */
+  upcomingShifts: ShiftRow[];
   pendingLeave: LeaveRow[];
   users: UserRow[];
   audits: AuditRow[];
@@ -178,27 +181,17 @@ function IconCheckpoint() {
 export function ManagerOverviewDashboard({
   kpis,
   shifts,
+  upcomingShifts,
   pendingLeave,
   users,
   audits,
   isAdmin,
 }: ManagerOverviewDashboardProps) {
-  const [statusFilter, setStatusFilter] = useState<string | null>(null);
-  const [dutyFilter, setDutyFilter] = useState<string | null>(null);
-
   const statusSegments = useMemo(() => shiftStatusSegments(shifts), [shifts]);
   const dutySegments = useMemo(() => shiftDutySegments(shifts), [shifts]);
   const weekBars = useMemo(() => shiftsNextSevenDays(shifts), [shifts]);
   const auditBars = useMemo(() => auditActivityTimeline(audits), [audits]);
   const auditEntities = useMemo(() => auditEntitySegments(audits), [audits]);
-
-  const filteredShifts = useMemo(() => {
-    return shifts.filter((s) => {
-      if (statusFilter && s.status !== statusFilter) return false;
-      if (dutyFilter && s.dutyState !== dutyFilter) return false;
-      return true;
-    });
-  }, [shifts, statusFilter, dutyFilter]);
 
   const openIncidents = Number(kpis?.openIncidents ?? 0);
   const activeSos = Number(kpis?.activeSos ?? 0);
@@ -213,8 +206,8 @@ export function ManagerOverviewDashboard({
               Live command snapshot
             </h2>
             <p className="mt-1 max-w-2xl text-sm text-[var(--portal-text-muted)]">
-              Interactive view of coverage, incidents, and scheduling. Click chart segments to filter the shift table
-              below.
+              Interactive view of coverage, incidents, and scheduling. Click chart segments to open the matching
+              filtered shift views.
             </p>
           </div>
           <nav className="flex flex-wrap gap-2" aria-label="Quick actions">
@@ -261,63 +254,41 @@ export function ManagerOverviewDashboard({
         />
       </section>
 
-      {(statusFilter || dutyFilter) ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--portal-border)] bg-[var(--portal-highlight)] px-3 py-2 text-sm">
-          <span className="text-[var(--portal-text-muted)]">Filtering shifts:</span>
-          {statusFilter ? (
-            <button type="button" className="lunar-badge-neutral" onClick={() => setStatusFilter(null)}>
-              Status: {statusFilter} ×
-            </button>
-          ) : null}
-          {dutyFilter ? (
-            <button type="button" className="lunar-badge-neutral" onClick={() => setDutyFilter(null)}>
-              Duty: {dutyFilter.replace(/_/g, " ")} ×
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className="ml-auto text-xs font-semibold text-[var(--portal-link)] hover:underline"
-            onClick={() => {
-              setStatusFilter(null);
-              setDutyFilter(null);
-            }}
-          >
-            Clear all
-          </button>
-        </div>
-      ) : null}
-
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-12">
         <ChartPanel
           className="xl:col-span-4"
           title="Shift status"
-          description="Click a segment to filter the table."
+          description="Click a status to open the filtered shifts table."
         >
           <OverviewDonutChart
             segments={statusSegments}
-            activeId={statusFilter}
-            onSelect={(id) => {
-              setStatusFilter(id);
-              if (id) setDutyFilter(null);
-            }}
+            hrefFor={(id) => `/manager/shifts?tab=shifts&status=${encodeURIComponent(id)}`}
             emptyLabel="No shifts in roster"
           />
         </ChartPanel>
 
-        <ChartPanel className="xl:col-span-4" title="Duty breakdown" description="Live duty states across shifts.">
+        <ChartPanel
+          className="xl:col-span-4"
+          title="Duty breakdown"
+          description="Click a duty state to open guard availability."
+        >
           <OverviewBarChart
             items={dutySegments}
-            activeId={dutyFilter}
-            onSelect={(id) => {
-              setDutyFilter(id);
-              if (id) setStatusFilter(null);
-            }}
+            hrefFor={(id) => `/manager/shifts?tab=availability&state=${encodeURIComponent(id)}`}
             emptyLabel="No duty states yet"
           />
         </ChartPanel>
 
-        <ChartPanel className="xl:col-span-4" title="Next 7 days" description="Scheduled shifts starting each day.">
-          <OverviewBarChart items={weekBars} emptyLabel="No shifts in the next week" />
+        <ChartPanel
+          className="xl:col-span-4"
+          title="Next 7 days"
+          description="Click a day to open it in the mega calendar."
+        >
+          <OverviewBarChart
+            items={weekBars}
+            hrefFor={(day) => `/manager/shifts?tab=calendar&from=${day}&to=${day}`}
+            emptyLabel="No shifts in the next week"
+          />
         </ChartPanel>
 
         {isAdmin ? (
@@ -337,16 +308,11 @@ export function ManagerOverviewDashboard({
       </section>
 
       <ManagerOverviewTables
-        shifts={filteredShifts}
+        shifts={upcomingShifts}
         pendingLeave={pendingLeave}
         users={users}
         audits={audits}
         isAdmin={isAdmin}
-        filterHint={
-          statusFilter || dutyFilter
-            ? `Showing ${filteredShifts.length} shift${filteredShifts.length === 1 ? "" : "s"} matching chart filter`
-            : undefined
-        }
       />
     </div>
   );

@@ -5,7 +5,11 @@ import {
   parseSessionCookie,
   SESSION_COOKIE_NAME,
 } from "@/lib/session";
-import { refreshSessionWithBackend, shouldRefreshAccessToken } from "@/lib/session-refresh";
+import {
+  isAccessTokenExpired,
+  refreshSessionWithBackend,
+  shouldRefreshAccessToken,
+} from "@/lib/session-refresh";
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -25,7 +29,12 @@ export async function middleware(req: NextRequest) {
 
   if (shouldRefreshAccessToken(session.accessToken)) {
     const refreshed = await refreshSessionWithBackend(session);
-    if (!refreshed) {
+    if (refreshed.ok) {
+      activeSession = refreshed.session;
+      refreshedPayload = JSON.stringify(refreshed.session);
+    } else if (refreshed.reason === "unauthorized" && isAccessTokenExpired(session.accessToken)) {
+      // Only hard-logout when the access token is already dead and refresh was rejected.
+      // Transient backend/network failures (or refresh races) must not wipe the cookie.
       const loginUrl = new URL("/login", req.url);
       if (pathname !== "/") {
         loginUrl.searchParams.set("next", pathname);
@@ -34,8 +43,7 @@ export async function middleware(req: NextRequest) {
       res.cookies.delete(SESSION_COOKIE_NAME);
       return res;
     }
-    activeSession = refreshed;
-    refreshedPayload = JSON.stringify(refreshed);
+    // If refresh failed but access token is still valid (skew window / race / outage), continue.
   }
 
   const withCookie = (res: NextResponse) => {

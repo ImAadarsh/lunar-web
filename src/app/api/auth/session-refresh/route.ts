@@ -1,7 +1,11 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { getSessionCookieStoreOptions, parseSessionCookie, SESSION_COOKIE_NAME } from "@/lib/session";
-import { refreshSessionWithBackend, shouldRefreshAccessToken } from "@/lib/session-refresh";
+import {
+  isAccessTokenExpired,
+  refreshSessionWithBackend,
+  shouldRefreshAccessToken,
+} from "@/lib/session-refresh";
 
 /**
  * Keeps the httpOnly session cookie aligned with short-lived access JWTs.
@@ -18,13 +22,23 @@ export async function POST() {
     return new NextResponse(null, { status: 204 });
   }
 
-  const nextSession = await refreshSessionWithBackend(session);
-  if (!nextSession) {
-    return NextResponse.json({ error: "Session refresh failed" }, { status: 401 });
+  const result = await refreshSessionWithBackend(session);
+  if (result.ok) {
+    store.set(SESSION_COOKIE_NAME, JSON.stringify(result.session), {
+      ...getSessionCookieStoreOptions(),
+    });
+    return NextResponse.json({ ok: true });
   }
 
-  store.set(SESSION_COOKIE_NAME, JSON.stringify(nextSession), {
-    ...getSessionCookieStoreOptions(),
-  });
-  return NextResponse.json({ ok: true });
+  if (result.reason === "unavailable") {
+    // Backend blip — keep cookie; client should not force logout.
+    return new NextResponse(null, { status: 204 });
+  }
+
+  if (!isAccessTokenExpired(session.accessToken)) {
+    // Likely a refresh-token rotation race; access token still works.
+    return new NextResponse(null, { status: 204 });
+  }
+
+  return NextResponse.json({ error: "Session refresh failed" }, { status: 401 });
 }

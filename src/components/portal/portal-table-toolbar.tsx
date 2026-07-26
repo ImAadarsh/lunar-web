@@ -37,7 +37,7 @@ type PortalTableToolbarProps = {
   /** Reset target (defaults to basePath with no query). */
   resetHref?: string;
   className?: string;
-  layout?: "default" | "search-only";
+  layout?: "default" | "search-only" | "stack";
 };
 
 export function PortalTableToolbar({
@@ -65,6 +65,7 @@ export function PortalTableToolbar({
       className={cn(
         "portal-filter-bar",
         layout === "search-only" && "portal-filter-bar--search",
+        layout === "stack" && "portal-filter-bar--stack",
         fields.length <= 2 && layout === "default" && "portal-filter-bar--3",
         className,
       )}

@@ -1168,6 +1168,15 @@
     grid-template-columns: minmax(0, 25%);
   }
 
+  .portal-filter-bar--stack {
+    @apply border-0 bg-transparent p-0;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .portal-filter-bar--stack > div {
+    @apply mt-2 border-t border-[var(--portal-border)] pt-4;
+  }
+
   .lunar-shimmer {
     @apply relative overflow-hidden;
   }

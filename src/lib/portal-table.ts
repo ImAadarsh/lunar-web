@@ -1,8 +1,14 @@
 export type SortDirection = "asc" | "desc";
 
+/** Allowed rows-per-page values for portal tables (`pageSize` URL param). */
+export const PORTAL_PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
+export type PortalPageSize = (typeof PORTAL_PAGE_SIZE_OPTIONS)[number];
+export const DEFAULT_PORTAL_PAGE_SIZE: PortalPageSize = 50;
+
 export type PortalTableParams = {
   q?: string;
   page?: string | number;
+  pageSize?: string | number;
   sort?: string;
   dir?: string;
   siteId?: string;
@@ -64,6 +70,18 @@ export function parseSortDir(dir: string | undefined): SortDirection {
 export function parseTablePage(page: string | undefined, totalPages: number) {
   const n = Math.max(1, Number(page ?? "1") || 1);
   return Math.min(n, Math.max(1, totalPages));
+}
+
+/** Clamp `pageSize` URL/query value to an allowed option; falls back to `fallback`. */
+export function parsePortalPageSize(
+  raw: string | number | undefined | null,
+  fallback: PortalPageSize = DEFAULT_PORTAL_PAGE_SIZE,
+): PortalPageSize {
+  const n = typeof raw === "number" ? raw : Number(raw ?? "");
+  if (PORTAL_PAGE_SIZE_OPTIONS.includes(n as PortalPageSize)) {
+    return n as PortalPageSize;
+  }
+  return PORTAL_PAGE_SIZE_OPTIONS.includes(fallback) ? fallback : DEFAULT_PORTAL_PAGE_SIZE;
 }
 
 export function filterByQuery<T>(

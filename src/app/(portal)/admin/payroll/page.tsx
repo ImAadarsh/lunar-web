@@ -9,7 +9,7 @@ import {
 } from "@/components/portal/portal-page-layout";
 import { PortalTabNav } from "@/components/portal/portal-tab-nav";
 import { PortalModal } from "@/components/portal/portal-modal";
-import { PortalTableToolbar } from "@/components/portal/portal-table-toolbar";
+import { PortalTableToolbarDrawer } from "@/components/portal/portal-table-toolbar-drawer";
 import { apiErrorMessage, backendApiWithSession } from "@/lib/backend";
 import { filterByQuery } from "@/lib/portal-table";
 import { formatUkDateRange, formatUkDateTime } from "@/lib/format-datetime";
@@ -220,14 +220,110 @@ export default async function AdminPayrollPage({ searchParams }: PayrollPageProp
     ? `${BASE_PATH}?runId=${runId}&tab=${activeTab}`
     : `${BASE_PATH}?tab=runs`;
 
-  const guardOptions = users.map((u) => ({ value: String(u.id), label: u.email }));
-
   const headerDescription = details
     ? `Run #${details.id} · ${details.status} · ${formatUkDateRange(details.periodStart, details.periodEnd)}`
     : `${runs.length} of ${allRuns.length} pay run${allRuns.length === 1 ? "" : "s"} · select a run to view lines and payslips`;
 
+  const guardOptions = users.map((u) => ({ value: String(u.id), label: u.email }));
+  const guardFilterLabel = userIdFilter
+    ? users.find((u) => u.id === userIdFilter)?.email ?? `Guard #${userIdFilter}`
+    : null;
+
+  const headerFilters =
+    activeTab === "runs" ? (
+      <PortalTableToolbarDrawer
+        basePath={BASE_PATH}
+        title="Pay run filters"
+        description="Search pay runs and filter by status."
+        summary={statusFilter || undefined}
+        preserved={{ tab: "runs" }}
+        resetHref={payrollResetHref}
+        fields={[
+          {
+            type: "search",
+            placeholder: "Search run ID, period, status…",
+            defaultValue: query,
+          },
+          {
+            type: "select",
+            name: "status",
+            label: "Status",
+            defaultValue: statusFilter,
+            options: [
+              { value: "", label: "All statuses" },
+              { value: "draft", label: "Draft" },
+              { value: "processing", label: "Processing" },
+              { value: "completed", label: "Completed" },
+              { value: "approved", label: "Approved" },
+              { value: "finalized", label: "Finalized" },
+            ],
+          },
+        ]}
+      />
+    ) : activeTab === "lines" && hasRun ? (
+      <PortalTableToolbarDrawer
+        basePath={BASE_PATH}
+        title="Payroll line filters"
+        description="Search lines and filter by guard."
+        summary={guardFilterLabel || undefined}
+        preserved={{ tab: "lines", runId: String(runId) }}
+        resetHref={payrollResetHref}
+        fields={[
+          {
+            type: "search",
+            placeholder: "Search guard, hours, amounts…",
+            defaultValue: query,
+          },
+          {
+            type: "select",
+            name: "userId",
+            label: "Guard",
+            defaultValue: userIdFilter ? String(userIdFilter) : "",
+            options: [{ value: "", label: "All guards" }, ...guardOptions],
+          },
+        ]}
+      />
+    ) : activeTab === "payslips" && hasRun ? (
+      <PortalTableToolbarDrawer
+        basePath={BASE_PATH}
+        title="Payslip filters"
+        description="Search payslips and filter by status or guard."
+        summary={[statusFilter || null, guardFilterLabel].filter(Boolean).join(" · ") || undefined}
+        preserved={{ tab: "payslips", runId: String(runId) }}
+        resetHref={payrollResetHref}
+        fields={[
+          {
+            type: "search",
+            placeholder: "Search guard, status, net pay…",
+            defaultValue: query,
+          },
+          {
+            type: "select",
+            name: "status",
+            label: "Status",
+            defaultValue: statusFilter,
+            options: [
+              { value: "", label: "All statuses" },
+              { value: "draft", label: "Draft" },
+              { value: "issued", label: "Issued" },
+              { value: "sent", label: "Sent" },
+              { value: "read", label: "Read" },
+            ],
+          },
+          {
+            type: "select",
+            name: "userId",
+            label: "Guard",
+            defaultValue: userIdFilter ? String(userIdFilter) : "",
+            options: [{ value: "", label: "All guards" }, ...guardOptions],
+          },
+        ]}
+      />
+    ) : null;
+
   const headerActions = (
     <>
+      {headerFilters}
       <PortalModal
         triggerLabel="Create Run"
         title="Create payroll run"
@@ -303,87 +399,6 @@ export default async function AdminPayrollPage({ searchParams }: PayrollPageProp
       <PortalPageHeader title="Payroll" description={headerDescription} actions={headerActions}>
         <ApiErrorNotice errors={loadErrors} />
         <PortalTabNav basePath={BASE_PATH} tabs={tabs} activeTab={activeTab} preserved={tabPreserved} />
-        {activeTab === "runs" ? (
-          <PortalTableToolbar
-            basePath={BASE_PATH}
-            preserved={{ tab: "runs" }}
-            resetHref={payrollResetHref}
-            fields={[
-              {
-                type: "search",
-                placeholder: "Search run ID, period, status…",
-                defaultValue: query,
-              },
-              {
-                type: "select",
-                name: "status",
-                label: "Status",
-                defaultValue: statusFilter,
-                options: [
-                  { value: "", label: "All statuses" },
-                  { value: "draft", label: "Draft" },
-                  { value: "processing", label: "Processing" },
-                  { value: "completed", label: "Completed" },
-                  { value: "approved", label: "Approved" },
-                  { value: "finalized", label: "Finalized" },
-                ],
-              },
-            ]}
-          />
-        ) : activeTab === "lines" && hasRun ? (
-          <PortalTableToolbar
-            basePath={BASE_PATH}
-            preserved={{ tab: "lines", runId: String(runId) }}
-            resetHref={payrollResetHref}
-            fields={[
-              {
-                type: "search",
-                placeholder: "Search guard, hours, amounts…",
-                defaultValue: query,
-              },
-              {
-                type: "select",
-                name: "userId",
-                label: "Guard",
-                defaultValue: userIdFilter ? String(userIdFilter) : "",
-                options: [{ value: "", label: "All guards" }, ...guardOptions],
-              },
-            ]}
-          />
-        ) : activeTab === "payslips" && hasRun ? (
-          <PortalTableToolbar
-            basePath={BASE_PATH}
-            preserved={{ tab: "payslips", runId: String(runId) }}
-            resetHref={payrollResetHref}
-            fields={[
-              {
-                type: "search",
-                placeholder: "Search guard, status, net pay…",
-                defaultValue: query,
-              },
-              {
-                type: "select",
-                name: "status",
-                label: "Status",
-                defaultValue: statusFilter,
-                options: [
-                  { value: "", label: "All statuses" },
-                  { value: "draft", label: "Draft" },
-                  { value: "issued", label: "Issued" },
-                  { value: "sent", label: "Sent" },
-                  { value: "read", label: "Read" },
-                ],
-              },
-              {
-                type: "select",
-                name: "userId",
-                label: "Guard",
-                defaultValue: userIdFilter ? String(userIdFilter) : "",
-                options: [{ value: "", label: "All guards" }, ...guardOptions],
-              },
-            ]}
-          />
-        ) : null}
       </PortalPageHeader>
 
       <PortalPageTableBody>

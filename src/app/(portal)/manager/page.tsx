@@ -3,6 +3,7 @@ import { ManagerOverviewDashboard } from "@/components/portal/manager-overview-d
 import { ApiErrorNotice } from "@/components/portal/api-error-notice";
 import { PortalPage, PortalPageBody, PortalPageHeader } from "@/components/portal/portal-page-layout";
 import { apiErrorMessage, backendApiWithSession } from "@/lib/backend";
+import { filterUpcomingShifts } from "@/lib/overview-stats";
 import { getSessionFromCookies } from "@/lib/server-session";
 
 type KpiData = {
@@ -75,9 +76,8 @@ export default async function ManagerOverviewPage() {
     isAdmin && auditRes ? apiErrorMessage("Audit events", auditRes) : "",
   ].filter(Boolean);
 
-  const upcomingShifts = [...shifts]
-    .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime())
-    .slice(0, 50);
+  // Charts use the full roster sample; the Upcoming table only gets future scheduled shifts.
+  const upcomingShifts = filterUpcomingShifts(shifts).slice(0, 50);
 
   return (
     <PortalPage>
@@ -94,7 +94,8 @@ export default async function ManagerOverviewPage() {
       <PortalPageBody card={false} scrollPage>
         <ManagerOverviewDashboard
           kpis={kpiRes.data ?? null}
-          shifts={upcomingShifts}
+          shifts={shifts}
+          upcomingShifts={upcomingShifts}
           pendingLeave={pendingLeave}
           users={users}
           audits={audits}

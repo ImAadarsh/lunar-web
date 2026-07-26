@@ -10,14 +10,28 @@ type RefreshEnvelope = {
   };
 };
 
-/** True when the access JWT is already past its backend-issued `exp` (we do not impose our own TTL). */
+export type RefreshResult =
+  | { ok: true; session: SessionData }
+  | { ok: false; reason: "unauthorized" | "unavailable" };
+
+/** Refresh when access JWT is expired or within this many seconds of expiring. */
+export const ACCESS_REFRESH_SKEW_SECONDS = 10 * 60; // 10 minutes
+
+/** True when the access JWT should be refreshed (expired or near expiry). */
 export function shouldRefreshAccessToken(accessToken: string): boolean {
+  const exp = readJwtExpiresAt(accessToken);
+  if (exp == null) return true;
+  return exp <= Math.floor(Date.now() / 1000) + ACCESS_REFRESH_SKEW_SECONDS;
+}
+
+/** True when the access JWT is already past `exp` (cannot authorize API calls). */
+export function isAccessTokenExpired(accessToken: string): boolean {
   const exp = readJwtExpiresAt(accessToken);
   if (exp == null) return true;
   return exp <= Math.floor(Date.now() / 1000);
 }
 
-export async function refreshSessionWithBackend(session: SessionData): Promise<SessionData | null> {
+export async function refreshSessionWithBackend(session: SessionData): Promise<RefreshResult> {
   try {
     const res = await fetch(`${BACKEND_API_BASE}/auth/refresh`, {
       method: "POST",
@@ -27,14 +41,17 @@ export async function refreshSessionWithBackend(session: SessionData): Promise<S
     });
     const json = (await res.json().catch(() => ({}))) as RefreshEnvelope;
     if (!res.ok || !json.data?.accessToken || !json.data?.refreshToken || !json.data?.user) {
-      return null;
+      return { ok: false, reason: res.status >= 500 || res.status === 0 ? "unavailable" : "unauthorized" };
     }
     return {
-      accessToken: json.data.accessToken,
-      refreshToken: json.data.refreshToken,
-      user: json.data.user,
+      ok: true,
+      session: {
+        accessToken: json.data.accessToken,
+        refreshToken: json.data.refreshToken,
+        user: json.data.user,
+      },
     };
   } catch {
-    return null;
+    return { ok: false, reason: "unavailable" };
   }
 }

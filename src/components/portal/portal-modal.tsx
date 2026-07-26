@@ -14,7 +14,10 @@ const sizeClasses: Record<PortalModalSize, string> = {
 };
 
 type PortalModalProps = {
-  triggerLabel: string;
+  /** Button label when `trigger` is not provided. */
+  triggerLabel?: string;
+  /** Custom trigger content (rendered inside the open button). */
+  trigger?: React.ReactNode;
   title: string;
   description?: string;
   children: React.ReactNode;
@@ -42,7 +45,8 @@ function CloseIcon() {
 }
 
 export function PortalModal({
-  triggerLabel,
+  triggerLabel = "Open",
+  trigger,
   title,
   description,
   children,
@@ -70,8 +74,10 @@ export function PortalModal({
         type="button"
         onClick={() => setOpen(true)}
         className={triggerClassName ?? "lunar-btn-primary"}
+        aria-haspopup="dialog"
+        aria-expanded={open}
       >
-        {triggerLabel}
+        {trigger ?? triggerLabel}
       </button>
       {open ? (
         <ModalPortal>

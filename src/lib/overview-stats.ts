@@ -73,6 +73,25 @@ export function shiftDutySegments(shifts: ShiftLike[]): ChartSegment[] {
   );
 }
 
+function localDateKey(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/**
+ * Upcoming = scheduled with start in the future.
+ * Matches backend `partitionShifts` upcoming bucket (excludes completed, cancelled, past, active).
+ */
+export function filterUpcomingShifts<T extends ShiftLike>(shifts: T[], now = Date.now()): T[] {
+  return shifts
+    .filter((s) => {
+      if (s.status !== "scheduled") return false;
+      const start = new Date(s.startsAt).getTime();
+      return !Number.isNaN(start) && start > now;
+    })
+    .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+}
+
 export function shiftsNextSevenDays(shifts: ShiftLike[]) {
   const days: Array<{ id: string; label: string; value: number }> = [];
   const now = new Date();
@@ -81,12 +100,9 @@ export function shiftsNextSevenDays(shifts: ShiftLike[]) {
   for (let i = 0; i < 7; i += 1) {
     const d = new Date(now);
     d.setDate(d.getDate() + i);
-    const key = d.toISOString().slice(0, 10);
+    const key = localDateKey(d);
     const label = d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric" });
-    const value = shifts.filter((s) => {
-      const start = new Date(s.startsAt);
-      return start.toISOString().slice(0, 10) === key;
-    }).length;
+    const value = shifts.filter((s) => localDateKey(new Date(s.startsAt)) === key).length;
     days.push({ id: key, label, value });
   }
   return days;

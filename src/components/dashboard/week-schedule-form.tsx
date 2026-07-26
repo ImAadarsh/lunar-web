@@ -41,6 +41,9 @@ export function WeekScheduleForm({ userId, trainedSites, isAdmin }: WeekSchedule
   const [weekStart, setWeekStart] = useState(() => formatDateInput(mondayOfWeekContaining(new Date())));
   const [siteId, setSiteId] = useState<string>("");
   const [days, setDays] = useState<DayRow[]>(() => Array.from({ length: 7 }, defaultRow));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   const weekDates = useMemo(
     () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
@@ -61,6 +64,7 @@ export function WeekScheduleForm({ userId, trainedSites, isAdmin }: WeekSchedule
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (saving) return;
     const form = e.currentTarget;
     const fd = new FormData(form);
     fd.set("userId", String(userId));
@@ -75,7 +79,17 @@ export function WeekScheduleForm({ userId, trainedSites, isAdmin }: WeekSchedule
       n += 1;
     });
     fd.set("shiftCount", String(n));
-    await bulkScheduleShiftsAction(fd);
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      await bulkScheduleShiftsAction(fd);
+      setSuccess(`${n} shift${n === 1 ? "" : "s"} saved.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save shifts. Please try again.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   const enabledCount = days.filter((d) => d.enabled).length;
@@ -84,6 +98,15 @@ export function WeekScheduleForm({ userId, trainedSites, isAdmin }: WeekSchedule
     <form onSubmit={handleSubmit} className="space-y-4">
       <input type="hidden" name="userId" value={userId} />
       <DutyScheduleHint />
+
+      {error ? (
+        <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{error}</p>
+      ) : null}
+      {success ? (
+        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          {success}
+        </p>
+      ) : null}
 
       <label className="block text-sm text-slate-600">
         Week starting (Monday)
@@ -158,9 +181,11 @@ export function WeekScheduleForm({ userId, trainedSites, isAdmin }: WeekSchedule
       <button
         type="submit"
         className="lunar-btn-primary w-full sm:w-auto"
-        disabled={!siteId || enabledCount === 0}
+        disabled={!siteId || enabledCount === 0 || saving}
       >
-        Save week ({enabledCount} {enabledCount === 1 ? "shift" : "shifts"})
+        {saving
+          ? "Saving…"
+          : `Save week (${enabledCount} ${enabledCount === 1 ? "shift" : "shifts"})`}
       </button>
     </form>
   );

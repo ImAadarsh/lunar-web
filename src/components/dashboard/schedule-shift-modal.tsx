@@ -6,6 +6,9 @@ type ScheduleShiftModalProps = {
   canAssign: boolean;
   trainedSites: Array<{ siteId: number; siteName: string }>;
   isAdmin: boolean;
+  /** Defaults to "Schedule shift". */
+  triggerLabel?: string;
+  triggerClassName?: string;
 };
 
 export function ScheduleShiftModal({
@@ -13,13 +16,15 @@ export function ScheduleShiftModal({
   canAssign,
   trainedSites,
   isAdmin,
+  triggerLabel = "Schedule shift",
+  triggerClassName = "lunar-btn-primary lunar-btn-sm sm:lunar-btn-primary",
 }: ScheduleShiftModalProps) {
   return (
     <PortalModal
-      triggerLabel="Schedule shift"
+      triggerLabel={triggerLabel}
       title="Schedule shift"
       description="One duty per duty day (date of start). Future days can be scheduled while other shifts are booked."
-      triggerClassName="lunar-btn-primary lunar-btn-sm sm:lunar-btn-primary"
+      triggerClassName={triggerClassName}
       size="md"
     >
       {!canAssign ? (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { cn } from "@/lib/cn";
 import {
   PortalBulkActionBar,
@@ -9,7 +10,14 @@ import {
   type PortalBulkAction,
 } from "@/components/portal/portal-table-selection";
 import type { PortalDataTableColumn } from "@/components/portal/portal-data-table";
-import { compareOptionalDates, compareStrings, type SortDirection } from "@/lib/portal-table";
+import { PortalPageSizeSelect } from "@/components/portal/portal-page-size-select";
+import {
+  compareOptionalDates,
+  compareStrings,
+  DEFAULT_PORTAL_PAGE_SIZE,
+  parsePortalPageSize,
+  type SortDirection,
+} from "@/lib/portal-table";
 
 export type PortalClientColumn<T> = PortalDataTableColumn<T> & {
   sortValue?: (row: T) => string | number;
@@ -25,7 +33,8 @@ type PortalClientDataTableProps<T> = {
   defaultSort?: string;
   defaultDir?: SortDirection;
   minWidth?: string;
-  pageSize?: number;
+  /** Fallback when `pageSize` is absent from the URL. */
+  defaultPageSize?: number;
   bulk?: {
     formId: string;
     action: (formData: FormData) => void | Promise<void>;
@@ -67,10 +76,13 @@ export function PortalClientDataTable<T>({
   defaultSort,
   defaultDir = "asc",
   minWidth = "32rem",
-  pageSize = 12,
+  defaultPageSize = DEFAULT_PORTAL_PAGE_SIZE,
   bulk,
   className,
 }: PortalClientDataTableProps<T>) {
+  const searchParams = useSearchParams();
+  const pageSize = parsePortalPageSize(searchParams.get("pageSize"), parsePortalPageSize(defaultPageSize));
+
   const [q, setQ] = useState("");
   const [sort, setSort] = useState(defaultSort ?? columns.find((c) => c.sortable)?.id ?? columns[0]?.id ?? "");
   const [dir, setDir] = useState<SortDirection>(defaultDir);
@@ -88,6 +100,8 @@ export function PortalClientDataTable<T>({
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const currentPage = Math.min(page, totalPages);
   const pageRows = sorted.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const rangeStart = totalCount === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const rangeEnd = Math.min(currentPage * pageSize, totalCount);
 
   function toggleSort(columnId: string) {
     if (sort === columnId) {
@@ -187,31 +201,35 @@ export function PortalClientDataTable<T>({
       ) : null}
       <div className="lunar-table-wrap min-h-0 flex-1">{table}</div>
 
-      {totalCount > pageSize ? (
-        <div className="flex shrink-0 items-center justify-between border-t border-[var(--portal-border)] px-3 py-2 text-sm">
+      <div className="flex shrink-0 flex-col gap-3 border-t border-[var(--portal-border)] px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap items-center gap-3">
           <p className="text-[var(--portal-text-muted)]">
-            {(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, totalCount)} of {totalCount}
+            {totalCount === 0 ? "No rows" : `${rangeStart}–${rangeEnd} of ${totalCount}`}
           </p>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              className="lunar-btn-secondary lunar-btn-sm"
-              disabled={currentPage <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              Prev
-            </button>
-            <button
-              type="button"
-              className="lunar-btn-secondary lunar-btn-sm"
-              disabled={currentPage >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            >
-              Next
-            </button>
-          </div>
+          <PortalPageSizeSelect pageSize={pageSize} onPageSizeChange={() => setPage(1)} />
         </div>
-      ) : null}
+        <div className="flex gap-2">
+          <button
+            type="button"
+            className="lunar-btn-secondary lunar-btn-sm"
+            disabled={currentPage <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+          >
+            Prev
+          </button>
+          <span className="min-w-[5rem] self-center text-center text-sm font-medium text-[var(--portal-text)]">
+            {currentPage}/{totalPages}
+          </span>
+          <button
+            type="button"
+            className="lunar-btn-secondary lunar-btn-sm"
+            disabled={currentPage >= totalPages}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+          >
+            Next
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

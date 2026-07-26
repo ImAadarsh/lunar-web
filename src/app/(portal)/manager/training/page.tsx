@@ -10,15 +10,14 @@ import {
   PortalPageTableBody,
 } from "@/components/portal/portal-page-layout";
 import { AssignTrainingForm } from "@/components/training/assign-training-form";
-import { SearchableSelect } from "@/components/forms/searchable-select";
+import { PortalTableToolbarDrawer } from "@/components/portal/portal-table-toolbar-drawer";
 import { apiErrorMessage, backendApiWithSession } from "@/lib/backend";
 import { formatUkTrainedOn } from "@/lib/format-datetime";
 import { mutateBackend } from "@/lib/portal-mutations";
-import { compareOptionalDates, compareStrings, parseBulkIds, type SortDirection } from "@/lib/portal-table";
+import { compareOptionalDates, compareStrings, parseBulkIds, parsePortalPageSize, type SortDirection } from "@/lib/portal-table";
 import { getSessionFromCookies } from "@/lib/server-session";
 
 const BASE_PATH = "/manager/training";
-const PAGE_SIZE = 20;
 const SORT_KEYS = ["userEmail", "siteName", "trainedOn", "notes", "createdAt"] as const;
 
 type TrainingRow = {
@@ -45,6 +44,7 @@ type TrainingPageProps = {
   searchParams: Promise<{
     q?: string;
     page?: string;
+    pageSize?: string;
     sort?: string;
     dir?: string;
     siteId?: string;
@@ -89,6 +89,7 @@ export default async function ManagerTrainingPage({ searchParams }: TrainingPage
     : "siteName";
   const dir: SortDirection = params.dir === "desc" ? "desc" : "asc";
   const page = Math.max(1, Number(params.page ?? "1") || 1);
+  const pageSize = parsePortalPageSize(params.pageSize);
 
   const apiQuery = new URLSearchParams();
   if (siteId) apiQuery.set("siteId", siteId);
@@ -131,11 +132,11 @@ export default async function ManagerTrainingPage({ searchParams }: TrainingPage
 
   const sorted = sortRows(filtered, sort, dir);
   const totalCount = sorted.length;
-  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const currentPage = Math.min(page, totalPages);
-  const pageRows = sorted.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const pageRows = sorted.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  const tableQuery = { q: params.q, siteId, userId };
+  const tableQuery = { q: params.q, siteId, userId, pageSize };
 
   const loadErrors = [
     apiErrorMessage("Training assignments", assignmentsRes),
@@ -247,7 +248,50 @@ export default async function ManagerTrainingPage({ searchParams }: TrainingPage
         title="Training"
         description={`Guard ↔ site assignments · ${totalCount} record${totalCount === 1 ? "" : "s"}`}
         actions={
-          isAdmin ? (
+          <>
+            <PortalTableToolbarDrawer
+              basePath={BASE_PATH}
+              title="Training filters"
+              description="Search assignments and filter by site or guard."
+              summary={
+                [
+                  siteId ? sites.find((s) => String(s.id) === siteId)?.name ?? `Site #${siteId}` : null,
+                  userId
+                    ? guardOptions.find((g) => String(g.id) === userId)?.email ?? `Guard #${userId}`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ") || undefined
+              }
+              preserved={{ sort, dir }}
+              fields={[
+                {
+                  type: "search",
+                  placeholder: "Guard, site, notes…",
+                  defaultValue: params.q ?? "",
+                },
+                {
+                  type: "searchable-select",
+                  name: "siteId",
+                  label: "Site",
+                  defaultValue: siteId,
+                  emptyLabel: "All sites",
+                  searchPlaceholder: "Search sites…",
+                  options: sites.map((site) => ({ value: String(site.id), label: site.name })),
+                },
+                {
+                  type: "select",
+                  name: "userId",
+                  label: "Guard",
+                  defaultValue: userId,
+                  options: [
+                    { value: "", label: "All guards" },
+                    ...guardOptions.map((guard) => ({ value: String(guard.id), label: guard.email })),
+                  ],
+                },
+              ]}
+            />
+            {isAdmin ? (
               <PortalModal
                 triggerLabel="Assign guard to site"
                 title="Assign training"
@@ -261,55 +305,11 @@ export default async function ManagerTrainingPage({ searchParams }: TrainingPage
                   assignAction={assignTrainingAction}
                 />
               </PortalModal>
-          ) : undefined
+            ) : null}
+          </>
         }
       >
         <ApiErrorNotice errors={loadErrors} />
-
-        <form method="get" action={BASE_PATH} className="portal-filter-bar">
-            <label className="block min-w-0 text-sm text-slate-600">
-              Search
-              <input
-                name="q"
-                type="search"
-                defaultValue={params.q ?? ""}
-                placeholder="Guard, site, notes…"
-                className="mt-1 w-full lunar-input"
-              />
-            </label>
-            <label className="block min-w-0 text-sm text-slate-600">
-              Site
-              <SearchableSelect
-                name="siteId"
-                defaultValue={siteId}
-                emptyLabel="All sites"
-                searchPlaceholder="Search sites…"
-                className="mt-1"
-                options={sites.map((site) => ({ value: String(site.id), label: site.name }))}
-              />
-            </label>
-            <label className="block min-w-0 text-sm text-slate-600">
-              Guard
-              <select name="userId" defaultValue={userId} className="mt-1 w-full lunar-select">
-                <option value="">All guards</option>
-                {guardOptions.map((guard) => (
-                  <option key={guard.id} value={guard.id}>
-                    {guard.email}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="flex flex-wrap gap-2">
-              <input type="hidden" name="sort" value={sort} />
-              <input type="hidden" name="dir" value={dir} />
-              <button type="submit" className="lunar-btn-primary">
-                Apply
-              </button>
-              <Link href={BASE_PATH} className="lunar-btn-secondary">
-                Reset
-              </Link>
-            </div>
-        </form>
       </PortalPageHeader>
 
       <PortalPageTableBody>
@@ -327,7 +327,7 @@ export default async function ManagerTrainingPage({ searchParams }: TrainingPage
           page={currentPage}
           totalPages={totalPages}
           totalCount={totalCount}
-          pageSize={PAGE_SIZE}
+          pageSize={pageSize}
           sort={sort}
           dir={dir}
           bulk={

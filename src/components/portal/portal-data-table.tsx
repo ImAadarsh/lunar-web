@@ -12,6 +12,7 @@ import {
   PortalSelectAllCheckbox,
   type PortalBulkAction,
 } from "@/components/portal/portal-table-selection";
+import { PortalPageSizeSelect } from "@/components/portal/portal-page-size-select";
 
 export type PortalDataTableColumn<T> = {
   id: string;
@@ -24,7 +25,7 @@ export type PortalDataTableColumn<T> = {
 
 type PortalDataTableProps<T> = {
   basePath: string;
-  query: PortalTableParams & Record<string, string | undefined>;
+  query: PortalTableParams & Record<string, string | number | undefined>;
   columns: PortalDataTableColumn<T>[];
   rows: T[];
   rowKey: (row: T) => string | number;
@@ -77,7 +78,7 @@ export function PortalDataTable<T>({
   const rangeStart = totalCount === 0 ? 0 : (page - 1) * pageSize + 1;
   const rangeEnd = Math.min(page * pageSize, totalCount);
 
-  const preserved: PortalTableParams & Record<string, string | undefined> = { ...query };
+  const preserved: PortalTableParams & Record<string, string | number | undefined> = { ...query };
 
   const table = (
     <table className="portal-table" style={{ minWidth }}>
@@ -151,12 +152,25 @@ export function PortalDataTable<T>({
       <div className="lunar-table-wrap min-h-0 flex-1">{table}</div>
 
       <div className="flex shrink-0 flex-col gap-3 border-t border-[var(--portal-border)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-[var(--portal-text-muted)]">
-          {totalCount === 0 ? "No rows" : `Showing ${rangeStart}–${rangeEnd} of ${totalCount}`}
-        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="text-sm text-[var(--portal-text-muted)]">
+            {totalCount === 0 ? "No rows" : `Showing ${rangeStart}–${rangeEnd} of ${totalCount}`}
+          </p>
+          <PortalPageSizeSelect
+            pageSize={pageSize}
+            basePath={basePath}
+            query={{ ...preserved, sort, dir }}
+          />
+        </div>
         <div className="flex items-center gap-2">
           <Link
-            href={buildPortalTableHref(basePath, { ...preserved, sort, dir, page: Math.max(1, page - 1) })}
+            href={buildPortalTableHref(basePath, {
+              ...preserved,
+              sort,
+              dir,
+              pageSize,
+              page: Math.max(1, page - 1),
+            })}
             className={cn("lunar-btn-secondary lunar-btn-sm", page <= 1 && "pointer-events-none opacity-40")}
             aria-disabled={page <= 1}
           >
@@ -170,6 +184,7 @@ export function PortalDataTable<T>({
               ...preserved,
               sort,
               dir,
+              pageSize,
               page: Math.min(totalPages, page + 1),
             })}
             className={cn(

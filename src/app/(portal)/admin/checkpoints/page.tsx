@@ -10,7 +10,7 @@ import {
   PortalPageTableBody,
 } from "@/components/portal/portal-page-layout";
 import { PortalModal } from "@/components/portal/portal-modal";
-import { PortalTableToolbar } from "@/components/portal/portal-table-toolbar";
+import { PortalTableToolbarDrawer } from "@/components/portal/portal-table-toolbar-drawer";
 import { apiErrorMessage, backendApiWithSession } from "@/lib/backend";
 import { filterByQuery } from "@/lib/portal-table";
 import { mutateBackend } from "@/lib/portal-mutations";
@@ -91,26 +91,58 @@ export default async function AdminCheckpointsPage({ searchParams }: Checkpoints
     revalidatePath(`/admin/checkpoints?siteId=${sid}`);
   }
 
-  const headerActions = siteId ? (
-    <PortalModal
-      triggerLabel="Add Checkpoint"
-      title="Add checkpoint"
-      description="Set the QR payload and coordinates for this patrol point."
-      triggerClassName="lunar-btn-primary lunar-btn-sm"
-    >
-      <form action={createCheckpointAction} className="space-y-3">
-        <input type="hidden" name="siteId" value={String(siteId)} />
-        <CheckpointPlaceFields />
-        <input
-          name="qrCode"
-          placeholder="Optional QR payload (default: auto = checkpoint ID)"
-          className="lunar-input"
+  const headerActions = (
+    <>
+      {siteId ? (
+        <PortalTableToolbarDrawer
+          basePath="/admin/checkpoints"
+          title="Checkpoint filters"
+          description="Search checkpoints and switch site."
+          summary={
+            [selectedSite?.name ?? null, searchQuery || null].filter(Boolean).join(" · ") || undefined
+          }
+          preserved={{ siteId: String(siteId) }}
+          resetHref={`/admin/checkpoints?siteId=${siteId}`}
+          fields={[
+            {
+              type: "search",
+              placeholder: "Search label, QR code, coordinates…",
+              defaultValue: searchQuery,
+            },
+            {
+              type: "searchable-select",
+              name: "siteId",
+              label: "Site",
+              defaultValue: String(siteId),
+              searchPlaceholder: "Search sites…",
+              placeholder: "Select site",
+              options: sites.map((site) => ({ value: String(site.id), label: site.name })),
+            },
+          ]}
         />
-        <input name="sortOrder" type="number" placeholder="Sort order (default 0)" className="lunar-input" />
-        <button className="lunar-btn-primary w-full">Save Checkpoint</button>
-      </form>
-    </PortalModal>
-  ) : null;
+      ) : null}
+      {siteId ? (
+        <PortalModal
+          triggerLabel="Add Checkpoint"
+          title="Add checkpoint"
+          description="Set the QR payload and coordinates for this patrol point."
+          triggerClassName="lunar-btn-primary lunar-btn-sm"
+        >
+          <form action={createCheckpointAction} className="space-y-3">
+            <input type="hidden" name="siteId" value={String(siteId)} />
+            <CheckpointPlaceFields />
+            <input
+              name="qrCode"
+              placeholder="Optional QR payload (default: auto = checkpoint ID)"
+              className="lunar-input"
+            />
+            <input name="sortOrder" type="number" placeholder="Sort order (default 0)" className="lunar-input" />
+            <button className="lunar-btn-primary w-full">Save Checkpoint</button>
+          </form>
+        </PortalModal>
+      ) : null}
+    </>
+  );
 
   return (
     <PortalPage>
@@ -124,29 +156,7 @@ export default async function AdminCheckpointsPage({ searchParams }: Checkpoints
         actions={headerActions}
       >
         <ApiErrorNotice errors={loadErrors} />
-        {siteId ? (
-          <PortalTableToolbar
-            basePath="/admin/checkpoints"
-            preserved={{ siteId: String(siteId) }}
-            resetHref={`/admin/checkpoints?siteId=${siteId}`}
-            fields={[
-              {
-                type: "search",
-                placeholder: "Search label, QR code, coordinates…",
-                defaultValue: searchQuery,
-              },
-              {
-                type: "searchable-select",
-                name: "siteId",
-                label: "Site",
-                defaultValue: String(siteId),
-                searchPlaceholder: "Search sites…",
-                placeholder: "Select site",
-                options: sites.map((site) => ({ value: String(site.id), label: site.name })),
-              },
-            ]}
-          />
-        ) : (
+        {!siteId ? (
           <div className="flex flex-wrap gap-2">
             {sites.map((site) => (
               <Link
@@ -158,7 +168,7 @@ export default async function AdminCheckpointsPage({ searchParams }: Checkpoints
               </Link>
             ))}
           </div>
-        )}
+        ) : null}
       </PortalPageHeader>
 
       {siteId ? (

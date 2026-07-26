@@ -1,40 +1,53 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 
-const INTERVAL_MS = 60_000;
+/** Quiet cookie refresh — avoid full page RSC reloads that freeze forms mid-edit. */
+const INTERVAL_MS = 2 * 60_000;
 
-/** Periodically asks the server to refresh only if the access JWT is already expired (pairs with middleware). */
+/**
+ * Keeps the httpOnly session cookie fresh while the portal tab is open.
+ * Does not remount the page on success (that previously felt like a hang / idle freeze).
+ */
 export function SessionKeepAlive() {
-  const router = useRouter();
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const inFlightRef = useRef(false);
 
   useEffect(() => {
     const tick = async () => {
+      if (inFlightRef.current) return;
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      inFlightRef.current = true;
       try {
         const res = await fetch("/api/auth/session-refresh", {
           method: "POST",
           credentials: "same-origin",
         });
-        if (res.status === 200) {
-          router.refresh();
-          return;
-        }
+        // Only force login when the server is certain the session is dead.
         if (res.status === 401) {
-          if (timerRef.current) clearInterval(timerRef.current);
-          router.replace("/login");
+          window.location.replace("/login");
         }
       } catch {
-        /* ignore transient network errors */
+        /* ignore transient network errors — do not log out */
+      } finally {
+        inFlightRef.current = false;
       }
     };
 
-    timerRef.current = setInterval(tick, INTERVAL_MS);
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+    void tick();
+    const timer = setInterval(tick, INTERVAL_MS);
+
+    const onWake = () => {
+      if (document.visibilityState === "visible") void tick();
     };
-  }, [router]);
+    document.addEventListener("visibilitychange", onWake);
+    window.addEventListener("focus", onWake);
+
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onWake);
+      window.removeEventListener("focus", onWake);
+    };
+  }, []);
 
   return null;
 }

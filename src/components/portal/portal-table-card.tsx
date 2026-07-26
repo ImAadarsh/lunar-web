@@ -3,6 +3,8 @@ import { cn } from "@/lib/cn";
 type PortalTableCardProps = {
   title?: React.ReactNode;
   description?: React.ReactNode;
+  /** Right-aligned header controls (e.g. a "view all" link). */
+  actions?: React.ReactNode;
   children: React.ReactNode;
   footer?: React.ReactNode;
   className?: string;
@@ -18,6 +20,7 @@ type PortalTableCardProps = {
 export function PortalTableCard({
   title,
   description,
+  actions,
   children,
   footer,
   className,
@@ -25,7 +28,7 @@ export function PortalTableCard({
   wrapTable = true,
   tableWrapClassName,
 }: PortalTableCardProps) {
-  const hasHeader = Boolean(title || description);
+  const hasHeader = Boolean(title || description || actions);
 
   return (
     <section
@@ -36,15 +39,18 @@ export function PortalTableCard({
       )}
     >
       {hasHeader ? (
-        <div className="shrink-0">
-          {title ? (
-            typeof title === "string" ? (
-              <h2 className="text-lg font-semibold text-[var(--portal-text)]">{title}</h2>
-            ) : (
-              title
-            )
-          ) : null}
-          {description ? <div className="mt-1 text-sm text-[var(--portal-text-muted)]">{description}</div> : null}
+        <div className="flex shrink-0 flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            {title ? (
+              typeof title === "string" ? (
+                <h2 className="text-lg font-semibold text-[var(--portal-text)]">{title}</h2>
+              ) : (
+                title
+              )
+            ) : null}
+            {description ? <div className="mt-1 text-sm text-[var(--portal-text-muted)]">{description}</div> : null}
+          </div>
+          {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
         </div>
       ) : null}
       <div

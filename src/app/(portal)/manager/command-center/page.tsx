@@ -269,17 +269,21 @@ export default async function ManagerCommandCenterPage({ searchParams }: Command
       <PortalPageHeader
         title="Command center"
         description="Live map, telemetry, and operational feeds across your sites."
-        actions={<AutoRefreshControl />}
+        actions={
+          <>
+            <CommandCenterFilters
+              sites={sites}
+              siteId={siteId || ""}
+              shiftStatus={shiftStatus}
+              incidentStatus={incidentStatus}
+              sosStatus={sosStatus}
+              hours={hours}
+            />
+            <AutoRefreshControl />
+          </>
+        }
       >
         <ApiErrorNotice errors={loadErrors} />
-        <CommandCenterFilters
-          sites={sites}
-          siteId={siteId || ""}
-          shiftStatus={shiftStatus}
-          incidentStatus={incidentStatus}
-          sosStatus={sosStatus}
-          hours={hours}
-        />
       </PortalPageHeader>
 
       <PortalPageBody card={false} scrollPage className="pb-10">

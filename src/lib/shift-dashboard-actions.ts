@@ -47,12 +47,17 @@ export async function bulkScheduleShiftsAction(formData: FormData) {
   }
   if (!shifts.length) return;
 
-  await mutateBackend("/shifts/bulk-schedule", "POST", {
-    userId,
-    siteId,
-    shifts,
-    ...(parseForceAssign(formData) ? { force: true } : {}),
-  });
+  // Chunk so large imports stay under the API limit and do not time out / hang the portal.
+  const CHUNK = 14;
+  for (let offset = 0; offset < shifts.length; offset += CHUNK) {
+    const chunk = shifts.slice(offset, offset + CHUNK);
+    await mutateBackend("/shifts/bulk-schedule", "POST", {
+      userId,
+      siteId,
+      shifts: chunk,
+      ...(parseForceAssign(formData) ? { force: true } : {}),
+    });
+  }
 
   revalidatePath(`/manager/guards/${userId}`);
   revalidatePath(`/manager/sites/${siteId}`);
@@ -119,19 +124,31 @@ export async function bulkShiftsAction(formData: FormData) {
   const ids = parseBulkIds(formData);
   if (!ids.length) return;
 
-  if (action === "cancel") {
-    for (const id of ids) {
-      await mutateBackend(`/shifts/${id}`, "PATCH", { status: "cancelled" });
+  const method = action === "delete" ? "DELETE" : action === "cancel" ? "PATCH" : null;
+  if (!method) return;
+
+  // Run in small parallel batches so large selections finish without stalling the tab.
+  const CONCURRENCY = 5;
+  for (let i = 0; i < ids.length; i += CONCURRENCY) {
+    const batch = ids.slice(i, i + CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map((id) =>
+        method === "DELETE"
+          ? mutateBackend(`/shifts/${id}`, "DELETE")
+          : mutateBackend(`/shifts/${id}`, "PATCH", { status: "cancelled" }),
+      ),
+    );
+    const firstError = results.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
+    if (firstError) {
+      throw firstError.reason instanceof Error
+        ? firstError.reason
+        : new Error(String(firstError.reason ?? "Bulk shift update failed"));
     }
-  } else if (action === "delete") {
-    for (const id of ids) {
-      await mutateBackend(`/shifts/${id}`, "DELETE");
-    }
-    revalidatePath("/manager");
-  } else {
-    return;
   }
 
+  if (action === "delete") {
+    revalidatePath("/manager");
+  }
   revalidatePath("/manager/shifts");
 }
 

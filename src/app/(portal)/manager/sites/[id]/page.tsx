@@ -11,7 +11,7 @@ import { DashboardShiftCards } from "@/components/dashboard/dashboard-shift-card
 import { DashboardShiftsTable } from "@/components/dashboard/dashboard-shifts-table";
 import { DashboardTabNav } from "@/components/dashboard/dashboard-tab-nav";
 import { HoursMiniChart } from "@/components/dashboard/hours-mini-chart";
-import { DateRangeFilterBar } from "@/components/dashboard/date-range-filter-bar";
+import { DateRangeFilterDrawer } from "@/components/dashboard/date-range-filter-drawer";
 import { RosterSummaryChips } from "@/components/dashboard/roster-summary-chips";
 import { SiteDetailsTab } from "@/components/dashboard/site-details-tab";
 import { SiteIdentityHeader } from "@/components/dashboard/site-identity-header";
@@ -246,8 +246,17 @@ export default async function SiteDashboardPage({ params, searchParams }: SiteDa
           <AssignGuardModal siteId={siteId} guards={trainedGuardOptions} isAdmin={isAdmin} />
         </div>
       </FocusDashboardHeader>
-      <PortalPageHeader>
-        <DateRangeFilterBar basePath={basePath} from={periodParams.from} to={periodParams.to} />
+      <PortalPageHeader
+        actions={
+          <DateRangeFilterDrawer
+            basePath={basePath}
+            from={periodParams.from}
+            to={periodParams.to}
+            title="Date range"
+            description="Choose the period shown on this site dashboard."
+          />
+        }
+      >
         <DashboardTabNav
           basePath={basePath}
           tabs={[...SITE_TABS]}

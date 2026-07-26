@@ -126,7 +126,17 @@ export default async function ManagerPingsPage({ searchParams }: ManagerPingsPag
           </>
         }
         actions={
-          <div className="flex flex-wrap items-center gap-2">
+          <>
+            <PingsFilterBar
+              basePath={BASE_PATH}
+              date={date}
+              siteId={siteId}
+              userId={userId}
+              status={status}
+              threadId={threadId ? String(threadId) : undefined}
+              sites={sites}
+              guards={guards}
+            />
             <a href={exportHref} className="lunar-btn-secondary lunar-btn-sm">
               Export CSV
             </a>
@@ -135,20 +145,10 @@ export default async function ManagerPingsPage({ searchParams }: ManagerPingsPag
                 Reports
               </Link>
             ) : null}
-          </div>
+          </>
         }
       >
         <ApiErrorNotice errors={loadErrors} />
-        <PingsFilterBar
-          basePath={BASE_PATH}
-          date={date}
-          siteId={siteId}
-          userId={userId}
-          status={status}
-          threadId={threadId ? String(threadId) : undefined}
-          sites={sites}
-          guards={guards}
-        />
       </PortalPageHeader>
 
       <PortalPageBody card className="min-h-0 flex-1 overflow-hidden p-0">

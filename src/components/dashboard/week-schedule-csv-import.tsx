@@ -32,6 +32,8 @@ export function WeekScheduleCsvImport({ userId, trainedSites, isAdmin }: WeekSch
   const [csvText, setCsvText] = useState("");
   const [preview, setPreview] = useState<ParsedWeekShift[] | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [success, setSuccess] = useState<string | null>(null);
 
   const parseResult = useMemo(() => {
     if (!csvText.trim()) return null;
@@ -65,7 +67,7 @@ export function WeekScheduleCsvImport({ userId, trainedSites, isAdmin }: WeekSch
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!preview?.length || !siteId) return;
+    if (!preview?.length || !siteId || saving) return;
     const fd = new FormData(e.currentTarget);
     fd.set("userId", String(userId));
     fd.set("siteId", siteId);
@@ -74,7 +76,17 @@ export function WeekScheduleCsvImport({ userId, trainedSites, isAdmin }: WeekSch
       fd.append(`shift_${i}_endsAt`, row.endsAt);
     });
     fd.set("shiftCount", String(preview.length));
-    await bulkScheduleShiftsAction(fd);
+    setSaving(true);
+    setErrors([]);
+    setSuccess(null);
+    try {
+      await bulkScheduleShiftsAction(fd);
+      setSuccess(`${preview.length} shift${preview.length === 1 ? "" : "s"} imported.`);
+    } catch (err) {
+      setErrors([err instanceof Error ? err.message : "Could not import shifts. Please try again."]);
+    } finally {
+      setSaving(false);
+    }
   }
 
   if (trainedSites.length === 0) {
@@ -190,6 +202,12 @@ export function WeekScheduleCsvImport({ userId, trainedSites, isAdmin }: WeekSch
         </ul>
       ) : null}
 
+      {success ? (
+        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          {success}
+        </p>
+      ) : null}
+
       {preview && preview.length > 0 ? (
         <div className="rounded-lg border border-slate-200 overflow-hidden">
           <table className="portal-table w-full text-sm">
@@ -218,9 +236,11 @@ export function WeekScheduleCsvImport({ userId, trainedSites, isAdmin }: WeekSch
       <button
         type="submit"
         className="lunar-btn-primary w-full sm:w-auto"
-        disabled={!siteId || !preview?.length}
+        disabled={!siteId || !preview?.length || saving}
       >
-        Import {preview?.length ?? 0} {preview?.length === 1 ? "shift" : "shifts"}
+        {saving
+          ? "Importing…"
+          : `Import ${preview?.length ?? 0} ${preview?.length === 1 ? "shift" : "shifts"}`}
       </button>
     </form>
   );

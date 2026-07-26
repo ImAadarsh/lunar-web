@@ -16,6 +16,7 @@ import { UkDateTimeHint } from "@/components/forms/uk-datetime-hint";
 import { formatUkDateTime } from "@/lib/format-datetime";
 import { shiftDutyLabel } from "@/lib/guard-availability";
 import { isoToUkDateTimeLocal } from "@/lib/uk-datetime";
+import type { ReactNode } from "react";
 
 export type ShiftDetail = {
   id: number;
@@ -37,6 +38,10 @@ type ShiftDetailModalProps = {
   trainingBySite: Record<string, number[]>;
   updateShiftAction: (formData: FormData) => void | Promise<void>;
   isAdmin?: boolean;
+  /** Custom open control (e.g. calendar shift block). Defaults to a View button. */
+  trigger?: ReactNode;
+  triggerClassName?: string;
+  triggerLabel?: string;
 };
 
 export function ShiftDetailModal({
@@ -46,15 +51,19 @@ export function ShiftDetailModal({
   trainingBySite,
   updateShiftAction,
   isAdmin = false,
+  trigger,
+  triggerClassName = "lunar-btn-secondary lunar-btn-sm",
+  triggerLabel = "View",
 }: ShiftDetailModalProps) {
   const terminal = shift.status === "cancelled" || shift.status === "completed";
 
   return (
     <PortalModal
-      triggerLabel="View"
+      triggerLabel={triggerLabel}
+      trigger={trigger}
       title={`Shift #${shift.id}`}
       description={`${shift.siteName} · ${shift.guardName}`}
-      triggerClassName="lunar-btn-secondary lunar-btn-sm"
+      triggerClassName={triggerClassName}
       panelClassName="max-w-lg"
     >
       <DetailTable

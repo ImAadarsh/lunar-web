@@ -14,13 +14,17 @@ export type SessionData = {
 
 export const SESSION_COOKIE_NAME = "lsw_session";
 
-/** Cookie flags shared by login, middleware, and session refresh (no maxAge — browser session). */
+/** Match backend refresh token lifetime so the browser keeps the session across restarts. */
+const SESSION_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30; // 30 days
+
+/** Cookie flags shared by login, middleware, and session refresh. */
 export function getSessionCookieStoreOptions() {
   return {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax" as const,
     path: "/",
+    maxAge: SESSION_COOKIE_MAX_AGE_SECONDS,
   };
 }
 
@@ -50,4 +54,3 @@ export function canAccessPath(role: BackendRole, pathname: string): boolean {
   if (pathname.startsWith("/staff")) return role === "guard";
   return true;
 }
-

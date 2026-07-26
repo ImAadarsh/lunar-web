@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import { cn } from "@/lib/cn";
 import { getDutyDate, shiftDutyLabel } from "@/lib/guard-availability";
@@ -5,6 +7,11 @@ import { UK_LOCALE, UK_TIME_ZONE } from "@/lib/format-datetime";
 import { buildGuardCalendarHref, buildSiteCalendarHref } from "@/lib/dashboard-period";
 import { formatDutyDateLabel } from "@/lib/week-schedule";
 import type { DashboardShiftRow } from "@/lib/dashboard-types";
+import {
+  ShiftDetailModal,
+  type ShiftDetail,
+} from "@/components/shifts/shift-detail-modal";
+import type { GuardPickerOption, SiteOption } from "@/components/shifts/trained-site-guard-picker";
 
 type CalendarShiftsViewProps = {
   /** Calendar mode — controls which side becomes a row in the grid. */
@@ -17,6 +24,16 @@ type CalendarShiftsViewProps = {
   shifts: DashboardShiftRow[];
   /** Empty-state copy when there are no shifts in range. */
   emptyMessage: string;
+  /** When true, skip outer card chrome (used inside a page that already provides the shell). */
+  embedded?: boolean;
+  /** When set, clicking a shift block opens the full shift detail / edit modal. */
+  shiftDetail?: {
+    sites: SiteOption[];
+    guards: GuardPickerOption[];
+    trainingBySite: Record<string, number[]>;
+    updateShiftAction: (formData: FormData) => void | Promise<void>;
+    isAdmin?: boolean;
+  };
 };
 
 type CalendarColumn = {
@@ -228,7 +245,15 @@ function buildRows(mode: "guard" | "site", shifts: DashboardShiftRow[], dayKeys:
   return rows;
 }
 
-export function CalendarShiftsView({ mode, from, to, shifts, emptyMessage }: CalendarShiftsViewProps) {
+export function CalendarShiftsView({
+  mode,
+  from,
+  to,
+  shifts,
+  emptyMessage,
+  embedded = false,
+  shiftDetail,
+}: CalendarShiftsViewProps) {
   const columns = buildColumns(from, to);
   const dayKeys = new Set(columns.map((c) => c.key));
   const rows = buildRows(mode, shifts, dayKeys);
@@ -243,21 +268,25 @@ export function CalendarShiftsView({ mode, from, to, shifts, emptyMessage }: Cal
 
   const rowLabel = mode === "guard" ? "Site" : "Guard";
 
-  return (
-    <div className="lunar-card lunar-card-pad">
+  const grid = (
+    <>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <div>
-          <h3 className="portal-section-title">Calendar view</h3>
-          <p className="portal-section-muted mt-0.5">
-            {mode === "guard"
-              ? "Shifts grouped by site. Click a site name to open that site’s calendar."
-              : "Shifts grouped by guard. Click a guard name to open their calendar."}
-          </p>
-        </div>
+        {!embedded ? (
+          <div>
+            <h3 className="portal-section-title">Calendar view</h3>
+            <p className="portal-section-muted mt-0.5">
+              {mode === "guard"
+                ? "Shifts grouped by site. Click a site name to open that site’s calendar."
+                : "Shifts grouped by guard. Click a guard name to open their calendar."}
+            </p>
+          </div>
+        ) : (
+          <div />
+        )}
         <CalendarLegend />
       </div>
 
-      <div className="mt-4 overflow-x-auto rounded-xl border border-[var(--portal-border)]">
+      <div className={cn("overflow-x-auto rounded-xl border border-[var(--portal-border)]", embedded ? "mt-3" : "mt-4")}>
         <table className="calendar-grid w-full border-collapse text-xs">
           <thead>
             <tr>
@@ -328,7 +357,12 @@ export function CalendarShiftsView({ mode, from, to, shifts, emptyMessage }: Cal
                         ) : (
                           <div className="flex flex-col gap-1 p-1">
                             {blocks.map((block, idx) => (
-                              <ShiftBlock key={`${block.shift.id}-${idx}`} block={block} mode={mode} />
+                              <ShiftBlock
+                                key={`${block.shift.id}-${idx}`}
+                                block={block}
+                                mode={mode}
+                                shiftDetail={shiftDetail}
+                              />
                             ))}
                           </div>
                         )}
@@ -341,11 +375,38 @@ export function CalendarShiftsView({ mode, from, to, shifts, emptyMessage }: Cal
           </tbody>
         </table>
       </div>
-    </div>
+    </>
   );
+
+  if (embedded) return <div className="pb-4">{grid}</div>;
+  return <div className="lunar-card lunar-card-pad">{grid}</div>;
 }
 
-function ShiftBlock({ block, mode }: { block: CalendarShiftBlock; mode: "guard" | "site" }) {
+function toShiftDetail(shift: DashboardShiftRow): ShiftDetail | null {
+  if (!shift.siteId || !shift.userId) return null;
+  return {
+    id: shift.id,
+    siteId: shift.siteId,
+    siteName: shift.siteName ?? `Site #${shift.siteId}`,
+    userId: shift.userId,
+    guardName: shift.guardName?.trim() || shift.userEmail || `Guard #${shift.userId}`,
+    guardEmail: shift.userEmail ?? "",
+    startsAt: shift.startsAt,
+    endsAt: shift.endsAt,
+    status: shift.status,
+    dutyState: shift.dutyState,
+  };
+}
+
+function ShiftBlock({
+  block,
+  mode,
+  shiftDetail,
+}: {
+  block: CalendarShiftBlock;
+  mode: "guard" | "site";
+  shiftDetail?: CalendarShiftsViewProps["shiftDetail"];
+}) {
   const { shift, partLabel, timeLabel, dutyDayLabel } = block;
   const tone = shiftBlockTone(shift);
   const subtitle = mode === "guard" ? shift.siteName : (shift.guardName ?? shift.userEmail);
@@ -359,6 +420,39 @@ function ShiftBlock({ block, mode }: { block: CalendarShiftBlock; mode: "guard" 
     .filter(Boolean)
     .join("\n");
 
+  const body = (
+    <>
+      <span className="truncate text-[10px] font-semibold uppercase tracking-wide opacity-80">
+        Duty · {dutyDayLabel}
+      </span>
+      <span className="truncate font-semibold">{subtitle ?? "—"}</span>
+      <span className="tabular-nums">{partLabel}</span>
+    </>
+  );
+
+  const detail = shiftDetail ? toShiftDetail(shift) : null;
+  if (detail && shiftDetail) {
+    return (
+      <ShiftDetailModal
+        shift={detail}
+        sites={shiftDetail.sites}
+        guards={shiftDetail.guards}
+        trainingBySite={shiftDetail.trainingBySite}
+        updateShiftAction={shiftDetail.updateShiftAction}
+        isAdmin={shiftDetail.isAdmin}
+        triggerClassName={cn(
+          "flex w-full flex-col gap-0.5 rounded-md border px-1.5 py-1 text-left text-[11px] leading-tight transition hover:brightness-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--portal-accent)]",
+          tone,
+        )}
+        trigger={
+          <span className="flex w-full flex-col gap-0.5" title={titleLines}>
+            {body}
+          </span>
+        }
+      />
+    );
+  }
+
   return (
     <div
       className={cn(
@@ -367,11 +461,7 @@ function ShiftBlock({ block, mode }: { block: CalendarShiftBlock; mode: "guard" 
       )}
       title={titleLines}
     >
-      <span className="truncate text-[10px] font-semibold uppercase tracking-wide opacity-80">
-        Duty · {dutyDayLabel}
-      </span>
-      <span className="truncate font-semibold">{subtitle ?? "—"}</span>
-      <span className="tabular-nums">{partLabel}</span>
+      {body}
     </div>
   );
 }

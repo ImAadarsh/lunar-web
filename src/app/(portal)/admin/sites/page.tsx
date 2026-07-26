@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { ApiErrorNotice } from "@/components/portal/api-error-notice";
 import { PortalModal } from "@/components/portal/portal-modal";
 import { PortalPage, PortalPageBody, PortalPageHeader } from "@/components/portal/portal-page-layout";
+import { PortalTableToolbarDrawer } from "@/components/portal/portal-table-toolbar-drawer";
 import { SubmitButton } from "@/components/portal/submit-button";
 import { SiteEditForm } from "@/components/sites/site-edit-form";
 import { SiteGeofenceFields } from "@/components/sites/site-geofence-fields";
@@ -164,18 +165,33 @@ export default async function AdminSitesPage({ searchParams }: AdminSitesPagePro
         title="Sites"
         description="Patrol sites with geofences, coordinates, and checkpoint links."
         actions={
-          <PortalModal
-            triggerLabel="Create site"
-            title="Create site"
-            description="Search for an address, set the centre on the map, and draw the patrol geofence polygon."
-            triggerClassName="lunar-btn-primary"
-            size="xl"
-          >
-            <form action={createSiteAction} className="space-y-3">
-              <SiteGeofenceFields />
-              <SubmitButton pendingLabel="Creating site...">Save Site</SubmitButton>
-            </form>
-          </PortalModal>
+          <>
+            <PortalTableToolbarDrawer
+              basePath="/admin/sites"
+              title="Site filters"
+              description="Search sites by name, address, or coordinates."
+              summary={query || undefined}
+              fields={[
+                {
+                  type: "search",
+                  placeholder: "Search name, address, coordinates",
+                  defaultValue: query,
+                },
+              ]}
+            />
+            <PortalModal
+              triggerLabel="Create site"
+              title="Create site"
+              description="Search for an address, set the centre on the map, and draw the patrol geofence polygon."
+              triggerClassName="lunar-btn-primary"
+              size="xl"
+            >
+              <form action={createSiteAction} className="space-y-3">
+                <SiteGeofenceFields />
+                <SubmitButton pendingLabel="Creating site...">Save Site</SubmitButton>
+              </form>
+            </PortalModal>
+          </>
         }
       >
         <ApiErrorNotice errors={loadErrors} />
@@ -189,14 +205,6 @@ export default async function AdminSitesPage({ searchParams }: AdminSitesPagePro
             {actionError}
           </p>
         ) : null}
-        <form method="get" className="portal-filter-bar portal-filter-bar--search">
-          <input
-            name="q"
-            defaultValue={query}
-            placeholder="Search name, address, coordinates"
-            className="min-w-0 w-full lunar-input"
-          />
-        </form>
       </PortalPageHeader>
       <PortalPageBody padded>
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">

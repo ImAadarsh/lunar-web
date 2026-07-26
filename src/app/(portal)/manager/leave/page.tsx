@@ -6,7 +6,7 @@ import { guardProfileDetailRows } from "@/components/portal/guard-profile-detail
 import { PortalDataTable, type PortalDataTableColumn } from "@/components/portal/portal-data-table";
 import { PortalModal } from "@/components/portal/portal-modal";
 import { PortalPage, PortalPageHeader, PortalPageTableBody } from "@/components/portal/portal-page-layout";
-import { PortalTableToolbar } from "@/components/portal/portal-table-toolbar";
+import { PortalTableToolbarDrawer } from "@/components/portal/portal-table-toolbar-drawer";
 import { StatusBadge } from "@/components/portal/status-badge";
 import { apiErrorMessage, backendApiWithSession } from "@/lib/backend";
 import { formatUkDateOnly, formatUkDateTime } from "@/lib/format-datetime";
@@ -23,13 +23,13 @@ import {
   filterByQuery,
   paginateRows,
   parseBulkIds,
+  parsePortalPageSize,
   parseSortDir,
   type SortDirection,
 } from "@/lib/portal-table";
 import { getSessionFromCookies } from "@/lib/server-session";
 
 const BASE_PATH = "/manager/leave";
-const PAGE_SIZE = 15;
 const SORT_KEYS = ["id", "guard", "leaveType", "startDate", "endDate", "status", "requestedAt"] as const;
 
 type LeaveRequest = LeaveMonthItem & {
@@ -56,7 +56,7 @@ type LeaveRequestsResponse = {
 };
 
 type LeavePageProps = {
-  searchParams: Promise<{ q?: string; page?: string; sort?: string; dir?: string; status?: string }>;
+  searchParams: Promise<{ q?: string; page?: string; pageSize?: string; sort?: string; dir?: string; status?: string }>;
 };
 
 function sortLeaveRows(rows: LeaveRequest[], sort: string, dir: SortDirection) {
@@ -101,6 +101,7 @@ export default async function ManagerLeavePage({ searchParams }: LeavePageProps)
     : "requestedAt";
   const dir = parseSortDir(params.dir ?? "desc");
   const page = Math.max(1, Number(params.page ?? "1") || 1);
+  const pageSize = parsePortalPageSize(params.pageSize);
 
   const leaveRes = await backendApiWithSession<LeaveRequestsResponse>("/leave-requests?limit=200", session);
   const allRequests = leaveRes.data?.items ?? [];
@@ -118,8 +119,8 @@ export default async function ManagerLeavePage({ searchParams }: LeavePageProps)
   );
 
   const sorted = sortLeaveRows(filtered, sort, dir);
-  const { slice: pageRows, totalCount, totalPages, currentPage } = paginateRows(sorted, page, PAGE_SIZE);
-  const tableQuery = { q: params.q, status: statusFilter, sort, dir };
+  const { slice: pageRows, totalCount, totalPages, currentPage } = paginateRows(sorted, page, pageSize);
+  const tableQuery = { q: params.q, status: statusFilter, sort, dir, pageSize };
 
   async function decisionAction(formData: FormData) {
     "use server";
@@ -296,28 +297,33 @@ export default async function ManagerLeavePage({ searchParams }: LeavePageProps)
       <PortalPageHeader
         title="Leave request decisions"
         description={`${totalCount} request${totalCount === 1 ? "" : "s"} · search, filter, sort, and bulk approve`}
+        actions={
+          <PortalTableToolbarDrawer
+            basePath={BASE_PATH}
+            title="Leave filters"
+            description="Search leave requests and filter by status."
+            summary={statusFilter || undefined}
+            preserved={{ sort, dir }}
+            fields={[
+              { type: "search", placeholder: "Guard, email, type, ID…", defaultValue: params.q ?? "" },
+              {
+                type: "select",
+                name: "status",
+                label: "Status",
+                defaultValue: statusFilter,
+                options: [
+                  { value: "", label: "All statuses" },
+                  { value: "pending", label: "Pending" },
+                  { value: "approved", label: "Approved" },
+                  { value: "rejected", label: "Rejected" },
+                  { value: "cancelled", label: "Cancelled" },
+                ],
+              },
+            ]}
+          />
+        }
       >
         <ApiErrorNotice errors={loadErrors} />
-        <PortalTableToolbar
-          basePath={BASE_PATH}
-          preserved={{ sort, dir }}
-          fields={[
-            { type: "search", placeholder: "Guard, email, type, ID…", defaultValue: params.q ?? "" },
-            {
-              type: "select",
-              name: "status",
-              label: "Status",
-              defaultValue: statusFilter,
-              options: [
-                { value: "", label: "All statuses" },
-                { value: "pending", label: "Pending" },
-                { value: "approved", label: "Approved" },
-                { value: "rejected", label: "Rejected" },
-                { value: "cancelled", label: "Cancelled" },
-              ],
-            },
-          ]}
-        />
       </PortalPageHeader>
 
       <PortalPageTableBody>
@@ -331,7 +337,7 @@ export default async function ManagerLeavePage({ searchParams }: LeavePageProps)
           page={currentPage}
           totalPages={totalPages}
           totalCount={totalCount}
-          pageSize={PAGE_SIZE}
+          pageSize={pageSize}
           sort={sort}
           dir={dir}
           minWidth="64rem"

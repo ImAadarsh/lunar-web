@@ -11,7 +11,7 @@ import {
   PortalPageTableBody,
 } from "@/components/portal/portal-page-layout";
 import { PortalTabNav } from "@/components/portal/portal-tab-nav";
-import { PortalTableToolbar } from "@/components/portal/portal-table-toolbar";
+import { PortalTableToolbarDrawer } from "@/components/portal/portal-table-toolbar-drawer";
 import { StatusBadge } from "@/components/portal/status-badge";
 import { apiErrorMessage, backendApiWithSession } from "@/lib/backend";
 import { formatUkDateTime } from "@/lib/format-datetime";
@@ -160,9 +160,79 @@ export default async function ManagerIncidentsPage({ searchParams }: ManagerInci
       ? `${filteredSos.length} of ${allSosEvents.length} SOS event${allSosEvents.length === 1 ? "" : "s"}`
       : `${filtered.length} incident${filtered.length === 1 ? "" : "s"} · ${allSosEvents.length} SOS event${allSosEvents.length === 1 ? "" : "s"}`;
 
+  const siteFilterLabel = siteIdFilter
+    ? sites.find((s) => s.id === siteIdFilter)?.name ?? `Site #${siteIdFilter}`
+    : null;
+
+  const headerFilters =
+    activeTab === "incidents" ? (
+      <PortalTableToolbarDrawer
+        basePath={BASE_PATH}
+        title="Incident filters"
+        description="Search and filter incidents by status and site."
+        summary={[statusFilter || null, siteFilterLabel].filter(Boolean).join(" · ") || undefined}
+        preserved={{ tab: "incidents" }}
+        fields={[
+          {
+            type: "search",
+            placeholder: "Search title, category, guard, site…",
+            defaultValue: query,
+          },
+          {
+            type: "select",
+            name: "status",
+            label: "Status",
+            defaultValue: statusFilter,
+            options: [
+              { value: "", label: "All statuses" },
+              { value: "open", label: "Open" },
+              { value: "in_review", label: "In review" },
+              { value: "closed", label: "Closed" },
+            ],
+          },
+          {
+            type: "searchable-select",
+            name: "siteId",
+            label: "Site",
+            defaultValue: siteIdFilter ? String(siteIdFilter) : "",
+            emptyLabel: "All sites",
+            searchPlaceholder: "Search sites…",
+            options: sites.map((site) => ({ value: String(site.id), label: site.name })),
+          },
+        ]}
+      />
+    ) : (
+      <PortalTableToolbarDrawer
+        basePath={BASE_PATH}
+        title="SOS filters"
+        description="Search and filter SOS events by status."
+        summary={statusFilter || undefined}
+        preserved={{ tab: "sos" }}
+        fields={[
+          {
+            type: "search",
+            placeholder: "Search guard, message, location…",
+            defaultValue: query,
+          },
+          {
+            type: "select",
+            name: "status",
+            label: "Status",
+            defaultValue: statusFilter,
+            options: [
+              { value: "", label: "All statuses" },
+              { value: "active", label: "Active" },
+              { value: "acknowledged", label: "Acknowledged" },
+              { value: "resolved", label: "Resolved" },
+            ],
+          },
+        ]}
+      />
+    );
+
   return (
     <PortalPage>
-      <PortalPageHeader title="Incidents & SOS" description={headerDescription}>
+      <PortalPageHeader title="Incidents & SOS" description={headerDescription} actions={headerFilters}>
         <ApiErrorNotice errors={loadErrors} />
         <PortalTabNav
           basePath={BASE_PATH}
@@ -173,64 +243,6 @@ export default async function ManagerIncidentsPage({ searchParams }: ManagerInci
           activeTab={activeTab}
           preserved={tabPreserved}
         />
-        {activeTab === "incidents" ? (
-          <PortalTableToolbar
-            basePath={BASE_PATH}
-            preserved={{ tab: "incidents" }}
-            fields={[
-              {
-                type: "search",
-                placeholder: "Search title, category, guard, site…",
-                defaultValue: query,
-              },
-              {
-                type: "select",
-                name: "status",
-                label: "Status",
-                defaultValue: statusFilter,
-                options: [
-                  { value: "", label: "All statuses" },
-                  { value: "open", label: "Open" },
-                  { value: "in_review", label: "In review" },
-                  { value: "closed", label: "Closed" },
-                ],
-              },
-              {
-                type: "searchable-select",
-                name: "siteId",
-                label: "Site",
-                defaultValue: siteIdFilter ? String(siteIdFilter) : "",
-                emptyLabel: "All sites",
-                searchPlaceholder: "Search sites…",
-                options: sites.map((site) => ({ value: String(site.id), label: site.name })),
-              },
-            ]}
-          />
-        ) : (
-          <PortalTableToolbar
-            basePath={BASE_PATH}
-            preserved={{ tab: "sos" }}
-            fields={[
-              {
-                type: "search",
-                placeholder: "Search guard, message, location…",
-                defaultValue: query,
-              },
-              {
-                type: "select",
-                name: "status",
-                label: "Status",
-                defaultValue: statusFilter,
-                options: [
-                  { value: "", label: "All statuses" },
-                  { value: "active", label: "Active" },
-                  { value: "acknowledged", label: "Acknowledged" },
-                  { value: "resolved", label: "Resolved" },
-                ],
-              },
-            ]}
-          />
-        )}
       </PortalPageHeader>
 
       <PortalPageTableBody>
