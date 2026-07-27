@@ -7,10 +7,20 @@ export type BackendAvailability = {
   canAssign?: boolean;
   rechargingUntil: string | Date | null;
   lastShiftEndedAt: string | Date | null;
+  currentShift?: { startsAt?: string | null; endsAt?: string | null } | null;
+  duties?: Array<{ startsAt: string; endsAt: string; status?: string; id?: number }> | null;
 };
 
-export function mapBackendAvailability(availability: BackendAvailability): GuardAvailabilityInfo {
-  return mapApiAvailability(availability);
+export function mapBackendAvailability(
+  availability: BackendAvailability,
+  currentShift?: { startsAt?: string | null; endsAt?: string | null } | null,
+  duties?: Array<{ startsAt: string; endsAt: string; status?: string; id?: number }> | null,
+): GuardAvailabilityInfo {
+  return mapApiAvailability(
+    availability,
+    currentShift ?? availability.currentShift,
+    duties ?? availability.duties,
+  );
 }
 
 export type HoursDayRow = {

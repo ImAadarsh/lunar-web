@@ -59,6 +59,7 @@ export async function assignGuardAtSiteAction(formData: FormData) {
   const siteId = Number(formData.get("siteId"));
   const startsAt = String(formData.get("startsAt") ?? "");
   const endsAt = String(formData.get("endsAt") ?? "");
+  const force = formData.get("force") === "1" || formData.get("force") === "on";
   if (!userId || !siteId || !startsAt || !endsAt) return;
 
   await mutateBackend("/shifts", "POST", {
@@ -67,6 +68,7 @@ export async function assignGuardAtSiteAction(formData: FormData) {
     startsAt: ukDateTimeLocalToIso(startsAt),
     endsAt: ukDateTimeLocalToIso(endsAt),
     status: "scheduled",
+    ...(force ? { force: true } : {}),
   });
 
   revalidateSite(siteId, userId);

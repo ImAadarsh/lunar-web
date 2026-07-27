@@ -4,11 +4,13 @@ import { useState } from "react";
 import { WeekScheduleCsvImport } from "@/components/dashboard/week-schedule-csv-import";
 import { WeekScheduleForm } from "@/components/dashboard/week-schedule-form";
 import { cn } from "@/lib/cn";
+import type { GuardAvailabilityInfo } from "@/lib/guard-availability";
 
 type WeekSchedulePanelProps = {
   userId: number;
   trainedSites: Array<{ siteId: number; siteName: string }>;
   isAdmin: boolean;
+  availability?: GuardAvailabilityInfo | null;
 };
 
 const TABS = [
@@ -16,7 +18,12 @@ const TABS = [
   { id: "csv", label: "Import CSV" },
 ] as const;
 
-export function WeekSchedulePanel({ userId, trainedSites, isAdmin }: WeekSchedulePanelProps) {
+export function WeekSchedulePanel({
+  userId,
+  trainedSites,
+  isAdmin,
+  availability = null,
+}: WeekSchedulePanelProps) {
   const [tab, setTab] = useState<(typeof TABS)[number]["id"]>("manual");
 
   return (
@@ -40,7 +47,12 @@ export function WeekSchedulePanel({ userId, trainedSites, isAdmin }: WeekSchedul
       </div>
 
       {tab === "manual" ? (
-        <WeekScheduleForm userId={userId} trainedSites={trainedSites} isAdmin={isAdmin} />
+        <WeekScheduleForm
+          userId={userId}
+          trainedSites={trainedSites}
+          isAdmin={isAdmin}
+          availability={availability}
+        />
       ) : (
         <WeekScheduleCsvImport userId={userId} trainedSites={trainedSites} isAdmin={isAdmin} />
       )}

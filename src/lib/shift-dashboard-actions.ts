@@ -3,20 +3,32 @@
 import { revalidatePath } from "next/cache";
 import { mutateBackend } from "@/lib/portal-mutations";
 import { parseBulkIds } from "@/lib/portal-table";
-import { backendApiWithSession } from "@/lib/backend";
-import { getSessionFromCookies } from "@/lib/server-session";
 import { ukDateTimeLocalToIso } from "@/lib/uk-datetime";
+
+export type ShiftActionResult = {
+  ok: true;
+  message: string;
+  count?: number;
+};
 
 function parseForceAssign(formData: FormData) {
   return formData.get("force") === "1" || formData.get("force") === "on";
 }
 
-export async function assignGuardShiftAction(formData: FormData) {
+function revalidateShiftPaths(userId?: number | null, siteId?: number | null) {
+  if (userId) revalidatePath(`/manager/guards/${userId}`);
+  if (siteId) revalidatePath(`/manager/sites/${siteId}`);
+  revalidatePath("/manager/shifts");
+}
+
+export async function assignGuardShiftAction(formData: FormData): Promise<ShiftActionResult> {
   const userId = Number(formData.get("userId"));
   const siteId = Number(formData.get("siteId"));
   const startsAt = String(formData.get("startsAt") ?? "");
   const endsAt = String(formData.get("endsAt") ?? "");
-  if (!userId || !siteId || !startsAt || !endsAt) return;
+  if (!userId || !siteId || !startsAt || !endsAt) {
+    throw new Error("Site, guard, start, and end time are required.");
+  }
 
   await mutateBackend("/shifts", "POST", {
     siteId,
@@ -27,16 +39,18 @@ export async function assignGuardShiftAction(formData: FormData) {
     ...(parseForceAssign(formData) ? { force: true } : {}),
   });
 
-  revalidatePath(`/manager/guards/${userId}`);
-  revalidatePath(`/manager/sites/${siteId}`);
-  revalidatePath("/manager/shifts");
+  revalidateShiftPaths(userId, siteId);
+  return { ok: true, message: "Shift assigned successfully.", count: 1 };
 }
 
-export async function bulkScheduleShiftsAction(formData: FormData) {
+/** One guard + one site + many start/end windows (recharge checked on the API including scheduled). */
+export async function bulkScheduleShiftsAction(formData: FormData): Promise<ShiftActionResult> {
   const userId = Number(formData.get("userId"));
   const siteId = Number(formData.get("siteId"));
   const count = Number(formData.get("shiftCount") ?? 0);
-  if (!userId || !siteId || !count) return;
+  if (!userId || !siteId || !count) {
+    throw new Error("Guard, site, and at least one shift are required.");
+  }
 
   const shifts: Array<{ startsAt: string; endsAt: string }> = [];
   for (let i = 0; i < count; i += 1) {
@@ -45,9 +59,10 @@ export async function bulkScheduleShiftsAction(formData: FormData) {
     if (!startsAt || !endsAt) continue;
     shifts.push({ startsAt: ukDateTimeLocalToIso(startsAt), endsAt: ukDateTimeLocalToIso(endsAt) });
   }
-  if (!shifts.length) return;
+  if (!shifts.length) {
+    throw new Error("Add at least one shift with start and end times.");
+  }
 
-  // Chunk so large imports stay under the API limit and do not time out / hang the portal.
   const CHUNK = 14;
   for (let offset = 0; offset < shifts.length; offset += CHUNK) {
     const chunk = shifts.slice(offset, offset + CHUNK);
@@ -59,14 +74,62 @@ export async function bulkScheduleShiftsAction(formData: FormData) {
     });
   }
 
-  revalidatePath(`/manager/guards/${userId}`);
-  revalidatePath(`/manager/sites/${siteId}`);
-  revalidatePath("/manager/shifts");
+  revalidateShiftPaths(userId, siteId);
+  const n = shifts.length;
+  return {
+    ok: true,
+    message: n === 1 ? "Shift assigned successfully." : `${n} shifts assigned successfully.`,
+    count: n,
+  };
 }
 
-export async function cancelShiftAction(formData: FormData) {
+/** One site + many (guard, start, end) rows. */
+export async function assignMultipleSiteShiftsAction(formData: FormData): Promise<ShiftActionResult> {
+  const siteId = Number(formData.get("siteId"));
+  const count = Number(formData.get("shiftCount") ?? 0);
+  if (!siteId || !count) {
+    throw new Error("Site and at least one shift are required.");
+  }
+
+  const force = parseForceAssign(formData);
+  const userIds = new Set<number>();
+  let saved = 0;
+
+  for (let i = 0; i < count; i += 1) {
+    const userId = Number(formData.get(`shift_${i}_userId`));
+    const startsAt = String(formData.get(`shift_${i}_startsAt`) ?? "");
+    const endsAt = String(formData.get(`shift_${i}_endsAt`) ?? "");
+    if (!userId || !startsAt || !endsAt) continue;
+    await mutateBackend("/shifts", "POST", {
+      siteId,
+      userId,
+      startsAt: ukDateTimeLocalToIso(startsAt),
+      endsAt: ukDateTimeLocalToIso(endsAt),
+      status: "scheduled",
+      ...(force ? { force: true } : {}),
+    });
+    userIds.add(userId);
+    saved += 1;
+  }
+
+  if (!saved) {
+    throw new Error("Add at least one complete shift (times and guard).");
+  }
+
+  for (const userId of userIds) revalidatePath(`/manager/guards/${userId}`);
+  revalidatePath(`/manager/sites/${siteId}`);
+  revalidatePath("/manager/shifts");
+
+  return {
+    ok: true,
+    message: saved === 1 ? "Shift assigned successfully." : `${saved} shifts assigned successfully.`,
+    count: saved,
+  };
+}
+
+export async function cancelShiftAction(formData: FormData): Promise<ShiftActionResult> {
   const shiftId = Number(formData.get("id"));
-  if (!shiftId) return;
+  if (!shiftId) throw new Error("Shift id is required.");
 
   await mutateBackend(`/shifts/${shiftId}`, "PATCH", { status: "cancelled" });
 
@@ -75,34 +138,18 @@ export async function cancelShiftAction(formData: FormData) {
   if (guardId) revalidatePath(`/manager/guards/${guardId}`);
   if (siteId) revalidatePath(`/manager/sites/${siteId}`);
   revalidatePath("/manager/shifts");
+  return { ok: true, message: "Shift cancelled." };
 }
 
-export async function updateShiftAction(formData: FormData) {
+export async function updateShiftAction(formData: FormData): Promise<ShiftActionResult> {
   const id = Number(formData.get("id"));
   const siteId = Number(formData.get("siteId"));
   const userId = Number(formData.get("userId"));
   const startsAt = String(formData.get("startsAt") ?? "");
   const endsAt = String(formData.get("endsAt") ?? "");
   const status = String(formData.get("status") ?? "").trim();
-  if (!id || !status || !siteId || !userId || !startsAt || !endsAt) return;
-
-  const session = await getSessionFromCookies();
-  if (!session) return;
-
-  type ShiftsResponse = { items: Array<{ id: number; userId: number }> };
-  type DutyRosterResponse = {
-    items: Array<{ userId: number; availability: { canAssign?: boolean } }>;
-  };
-
-  const [shiftsRes, rosterRes] = await Promise.all([
-    backendApiWithSession<ShiftsResponse>("/shifts", session),
-    backendApiWithSession<DutyRosterResponse>("/duty/roster", session),
-  ]);
-  const existing = shiftsRes.data?.items.find((s) => s.id === id);
-  const sameGuard = existing && existing.userId === userId;
-  if (!sameGuard) {
-    const row = rosterRes.data?.items.find((r) => r.userId === userId);
-    if (!row?.availability.canAssign) return;
+  if (!id || !status || !siteId || !userId || !startsAt || !endsAt) {
+    throw new Error("Shift details are incomplete.");
   }
 
   await mutateBackend(`/shifts/${id}`, "PATCH", {
@@ -114,20 +161,26 @@ export async function updateShiftAction(formData: FormData) {
     ...(parseForceAssign(formData) ? { force: true } : {}),
   });
 
-  revalidatePath(`/manager/guards/${userId}`);
-  revalidatePath(`/manager/sites/${siteId}`);
-  revalidatePath("/manager/shifts");
+  revalidateShiftPaths(userId, siteId);
+  const statusLabel =
+    status === "completed"
+      ? "Shift updated and marked completed."
+      : status === "cancelled"
+        ? "Shift updated and cancelled."
+        : status === "active"
+          ? "Shift updated and marked active."
+          : "Shift updated successfully.";
+  return { ok: true, message: statusLabel };
 }
 
-export async function bulkShiftsAction(formData: FormData) {
+export async function bulkShiftsAction(formData: FormData): Promise<void> {
   const action = String(formData.get("bulkAction") ?? "");
   const ids = parseBulkIds(formData);
-  if (!ids.length) return;
+  if (!ids.length) throw new Error("Select at least one shift.");
 
   const method = action === "delete" ? "DELETE" : action === "cancel" ? "PATCH" : null;
-  if (!method) return;
+  if (!method) throw new Error("Unknown bulk action.");
 
-  // Run in small parallel batches so large selections finish without stalling the tab.
   const CONCURRENCY = 5;
   for (let i = 0; i < ids.length; i += CONCURRENCY) {
     const batch = ids.slice(i, i + CONCURRENCY);
@@ -152,9 +205,9 @@ export async function bulkShiftsAction(formData: FormData) {
   revalidatePath("/manager/shifts");
 }
 
-export async function deleteShiftAction(formData: FormData) {
+export async function deleteShiftAction(formData: FormData): Promise<ShiftActionResult> {
   const shiftId = Number(formData.get("id"));
-  if (!shiftId) return;
+  if (!shiftId) throw new Error("Shift id is required.");
 
   await mutateBackend(`/shifts/${shiftId}`, "DELETE");
 
@@ -164,4 +217,5 @@ export async function deleteShiftAction(formData: FormData) {
   if (siteId) revalidatePath(`/manager/sites/${siteId}`);
   revalidatePath("/manager/shifts");
   revalidatePath("/manager");
+  return { ok: true, message: "Shift deleted." };
 }

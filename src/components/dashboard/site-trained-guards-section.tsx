@@ -2,20 +2,23 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { AssignShiftFromGuardForm } from "@/components/dashboard/assign-shift-from-guard-form";
 import { GuardAvailabilityBadge } from "@/components/portal/guard-availability-badge";
 import { StatusBadge } from "@/components/portal/status-badge";
 import { ModalPortal, useBodyScrollLock } from "@/components/ui/modal-portal";
 import { AvailabilityFilterChips } from "@/components/dashboard/availability-filter-chips";
-import { UkDateTimeHint } from "@/components/forms/uk-datetime-hint";
 import {
   addSiteTrainingAction,
-  assignGuardAtSiteAction,
   removeSiteTrainingAction,
   updateSiteTrainingAction,
 } from "@/lib/site-dashboard-actions";
 import { formatHours } from "@/lib/dashboard-api";
 import { formatUkTrainedOn } from "@/lib/format-datetime";
-import { guardAvailabilityLabel, type GuardAvailabilityInfo } from "@/lib/guard-availability";
+import {
+  GUARD_RECHARGE_HOURS,
+  guardAvailabilityLabel,
+  type GuardAvailabilityInfo,
+} from "@/lib/guard-availability";
 import { cn } from "@/lib/cn";
 
 export type SiteTrainedGuardRow = {
@@ -44,6 +47,7 @@ type AssignTarget = {
   userId: number;
   label: string;
   canAssign: boolean;
+  availability: GuardAvailabilityInfo;
 };
 
 function DialogShell({
@@ -205,26 +209,40 @@ export function SiteTrainedGuardsSection({
               ) : null}
               {filteredGuards.map((guard) => {
                 const label = guard.guardName ?? guard.userEmail;
-                const canAssign = guard.availability.canAssign;
+                const canOpenAssign = guard.availability.state !== "disabled";
                 return (
                   <tr
                     key={guard.trainingId}
                     className={cn(
                       "border-t border-slate-100 align-top",
-                      canAssign ? "cursor-pointer hover:bg-lunar-50/60" : "hover:bg-slate-50/50",
+                      canOpenAssign ? "cursor-pointer hover:bg-lunar-50/60" : "hover:bg-slate-50/50",
                     )}
                     onClick={() => {
-                      if (!canAssign) return;
-                      setAssignTarget({ userId: guard.userId, label, canAssign });
+                      if (!canOpenAssign) return;
+                      setAssignTarget({
+                        userId: guard.userId,
+                        label,
+                        canAssign: guard.availability.canAssign,
+                        availability: guard.availability,
+                      });
                     }}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter" && canAssign) {
-                        setAssignTarget({ userId: guard.userId, label, canAssign });
+                      if (e.key === "Enter" && canOpenAssign) {
+                        setAssignTarget({
+                          userId: guard.userId,
+                          label,
+                          canAssign: guard.availability.canAssign,
+                          availability: guard.availability,
+                        });
                       }
                     }}
-                    tabIndex={canAssign ? 0 : undefined}
-                    role={canAssign ? "button" : undefined}
-                    title={canAssign ? "Click to assign a shift" : guardAvailabilityLabel(guard.availability.state)}
+                    tabIndex={canOpenAssign ? 0 : undefined}
+                    role={canOpenAssign ? "button" : undefined}
+                    title={
+                      canOpenAssign
+                        ? "Click to assign a shift (availability checked against start time)"
+                        : guardAvailabilityLabel(guard.availability.state)
+                    }
                   >
                     <td className="px-3 py-2.5">
                       <Link
@@ -299,34 +317,19 @@ export function SiteTrainedGuardsSection({
         title="Assign shift"
         description={
           assignTarget
-            ? `${assignTarget.label} · ${assignTarget.canAssign ? "Set start and end time for this site." : "Not assignable right now."}`
+            ? `${assignTarget.label} · set times first, add more shifts as needed (${GUARD_RECHARGE_HOURS}h rest)`
             : undefined
         }
+        wide
       >
         {assignTarget ? (
-          <form action={assignGuardAtSiteAction} className="space-y-3">
-            <input type="hidden" name="siteId" value={String(siteId)} />
-            <input type="hidden" name="userId" value={String(assignTarget.userId)} />
-            <div className="grid grid-cols-2 gap-2">
-              <label className="block text-sm text-slate-600">
-                Start (UK)
-                <input name="startsAt" type="datetime-local" required className="mt-1 w-full lunar-input" />
-              </label>
-              <label className="block text-sm text-slate-600">
-                End (UK)
-                <input name="endsAt" type="datetime-local" required className="mt-1 w-full lunar-input" />
-              </label>
-            </div>
-            <UkDateTimeHint />
-            <div className="flex justify-end gap-2 pt-2">
-              <button type="button" className="lunar-btn-secondary" onClick={closeAssign}>
-                Cancel
-              </button>
-              <button type="submit" className="lunar-btn-primary">
-                Assign shift
-              </button>
-            </div>
-          </form>
+          <AssignShiftFromGuardForm
+            userId={assignTarget.userId}
+            trainedSites={[{ siteId, siteName: "This site" }]}
+            isAdmin={isAdmin}
+            availability={assignTarget.availability}
+            lockedSiteId={siteId}
+          />
         ) : null}
       </DialogShell>
 

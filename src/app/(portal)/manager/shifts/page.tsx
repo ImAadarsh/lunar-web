@@ -13,9 +13,9 @@ import {
 import { PortalTabNav } from "@/components/portal/portal-tab-nav";
 import { PortalTableToolbarDrawer } from "@/components/portal/portal-table-toolbar-drawer";
 import { StatusBadge } from "@/components/portal/status-badge";
+import { ManagerAssignShiftForm } from "@/components/shifts/manager-assign-shift-form";
 import { ManagerGuardAvailabilityTable } from "@/components/shifts/manager-guard-availability-table";
 import { ShiftDetailModal, type ShiftDetail } from "@/components/shifts/shift-detail-modal";
-import { TrainedSiteGuardPicker } from "@/components/shifts/trained-site-guard-picker";
 import { apiErrorMessage, backendApiWithSession } from "@/lib/backend";
 import { formatUkDateTime } from "@/lib/format-datetime";
 import {
@@ -27,7 +27,7 @@ import {
 } from "@/lib/guard-availability";
 import { displayGuardName } from "@/lib/leave-month-stats";
 import { filterUpcomingShifts } from "@/lib/overview-stats";
-import { assignGuardShiftAction, bulkShiftsAction, updateShiftAction } from "@/lib/shift-dashboard-actions";
+import { bulkShiftsAction } from "@/lib/shift-dashboard-actions";
 import { buildTrainingBySite } from "@/lib/training-by-site";
 import {
   compareNumbers,
@@ -46,7 +46,6 @@ import {
   parseDashboardPeriodSearchParams,
 } from "@/lib/dashboard-period";
 import { ukDateRangeToIsoBounds } from "@/lib/uk-datetime";
-import { UkDateTimeHint } from "@/components/forms/uk-datetime-hint";
 import { getSessionFromCookies } from "@/lib/server-session";
 
 const BASE_PATH = "/manager/shifts";
@@ -73,6 +72,7 @@ type DutyRosterResponse = {
       canAssign?: boolean;
       rechargingUntil?: string | null;
       lastShiftEndedAt?: string | null;
+      duties?: Array<{ id?: number; startsAt: string; endsAt: string; status?: string }> | null;
     };
     primaryShift?: {
       id: number;
@@ -82,6 +82,7 @@ type DutyRosterResponse = {
       endsAt: string;
       status: string;
     } | null;
+    duties?: Array<{ id?: number; startsAt: string; endsAt: string; status?: string }> | null;
   }>;
 };
 
@@ -216,7 +217,11 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
     .map((guard) => {
       const rosterEntry = rosterByUser.get(guard.id);
       const availability = rosterEntry
-        ? mapApiAvailability(rosterEntry.availability)
+        ? mapApiAvailability(
+            rosterEntry.availability,
+            rosterEntry.primaryShift,
+            rosterEntry.duties ?? rosterEntry.availability.duties,
+          )
         : mapApiAvailability({ state: "disabled", canAssign: false, rechargingUntil: null, lastShiftEndedAt: null });
       // For "assigned" the roster's primaryShift is the guard's next (upcoming) shift.
       const nextShift =
@@ -359,24 +364,14 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
     <PortalModal
       triggerLabel="Assign Shift"
       title="Assign shift"
-      description={`Pick a site first — only trained guards appear. Recharging guards need ${GUARD_RECHARGE_HOURS}h rest after duty.`}
+      description={`Site first, then times, then trained guards free for that start. Recharging needs ${GUARD_RECHARGE_HOURS}h after the previous duty (completed or scheduled).`}
       triggerClassName="lunar-btn-primary lunar-btn-sm"
     >
-      <form action={assignGuardShiftAction} className="space-y-3">
-        <TrainedSiteGuardPicker sites={sites} guards={guardPickerOptions} trainingBySite={trainingBySite} />
-        <div className="grid grid-cols-2 gap-2">
-          <label className="text-xs font-semibold text-[var(--portal-text-muted)]">
-            Start (UK)
-            <input name="startsAt" type="datetime-local" required className="mt-1 lunar-input" />
-          </label>
-          <label className="text-xs font-semibold text-[var(--portal-text-muted)]">
-            End (UK)
-            <input name="endsAt" type="datetime-local" required className="mt-1 lunar-input" />
-          </label>
-        </div>
-        <UkDateTimeHint />
-        <button className="lunar-btn-primary w-full">Save shift</button>
-      </form>
+      <ManagerAssignShiftForm
+        sites={sites}
+        guards={guardPickerOptions}
+        trainingBySite={trainingBySite}
+      />
     </PortalModal>
   );
 
@@ -544,7 +539,6 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
           sites={sites}
           guards={guardPickerOptions}
           trainingBySite={trainingBySite}
-          updateShiftAction={updateShiftAction}
           isAdmin={isAdmin}
         />
       ),
@@ -599,7 +593,6 @@ export default async function ManagerShiftsPage({ searchParams }: ManagerShiftsP
                   sites,
                   guards: guardPickerOptions,
                   trainingBySite,
-                  updateShiftAction,
                   isAdmin,
                 }}
               />

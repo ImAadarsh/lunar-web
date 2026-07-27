@@ -1,6 +1,10 @@
 /** Guard duty availability — synced with backend guardDutyService.js */
 
-export const GUARD_RECHARGE_HOURS = 7;
+/** Rest hours after duty end before next start. Override with NEXT_PUBLIC_GUARD_RECHARGE_HOURS. */
+export const GUARD_RECHARGE_HOURS = Math.max(
+  0,
+  Number(process.env.NEXT_PUBLIC_GUARD_RECHARGE_HOURS ?? "8") || 8,
+);
 export const GUARD_RECHARGE_MS = GUARD_RECHARGE_HOURS * 60 * 60 * 1000;
 export const DUTY_TIMEZONE = "Europe/London";
 
@@ -49,6 +53,13 @@ export type GuardAvailabilityState =
   | "on_duty"
   | "missed_duty";
 
+export type GuardDutyWindow = {
+  startsAt: string;
+  endsAt: string;
+  status?: string;
+  id?: number;
+};
+
 export type GuardAvailabilityInfo = {
   state: GuardAvailabilityState;
   dutyState?: GuardDutyState | null;
@@ -56,6 +67,21 @@ export type GuardAvailabilityInfo = {
   lastShiftEndedAt: Date | null;
   rechargingUntil: Date | null;
   msUntilAvailable: number | null;
+  /** Current / primary shift window — used when checking a future proposed start. */
+  currentShiftStartsAt?: string | null;
+  currentShiftEndsAt?: string | null;
+  /**
+   * Known non-cancelled duties (scheduled / active / missed) used for recharge,
+   * overlap, and one-duty-per-day checks against a proposed start.
+   */
+  duties?: GuardDutyWindow[];
+};
+
+export type ProposedAssignStatus = {
+  canAssign: boolean;
+  state: GuardAvailabilityState;
+  label: string;
+  rechargingUntil: Date | null;
 };
 
 export function guardAvailabilityLabel(state: GuardAvailabilityState): string {
@@ -82,16 +108,24 @@ export function isGuardAccountActive(status: string) {
 }
 
 /** Map API availability payload to client info. */
-export function mapApiAvailability(raw: {
-  state: string;
-  dutyState?: string | null;
-  canAssign?: boolean;
-  rechargingUntil?: string | Date | null;
-  lastShiftEndedAt?: string | Date | null;
-}): GuardAvailabilityInfo {
+export function mapApiAvailability(
+  raw: {
+    state: string;
+    dutyState?: string | null;
+    canAssign?: boolean;
+    rechargingUntil?: string | Date | null;
+    lastShiftEndedAt?: string | Date | null;
+    currentShift?: { startsAt?: string | null; endsAt?: string | null } | null;
+    duties?: GuardDutyWindow[] | null;
+  },
+  currentShift?: { startsAt?: string | null; endsAt?: string | null } | null,
+  duties?: GuardDutyWindow[] | null,
+): GuardAvailabilityInfo {
   const lastShiftEndedAt = raw.lastShiftEndedAt ? new Date(raw.lastShiftEndedAt) : null;
   const rechargingUntil = raw.rechargingUntil ? new Date(raw.rechargingUntil) : null;
   const state = raw.state as GuardAvailabilityState;
+  const shift = currentShift ?? raw.currentShift ?? null;
+  const dutyList = duties ?? raw.duties ?? [];
   return {
     state,
     dutyState: (raw.dutyState as GuardDutyState | null) ?? null,
@@ -102,11 +136,120 @@ export function mapApiAvailability(raw: {
       state === "recharging" && rechargingUntil
         ? Math.max(0, rechargingUntil.getTime() - Date.now())
         : null,
+    currentShiftStartsAt: shift?.startsAt ?? null,
+    currentShiftEndsAt: shift?.endsAt ?? null,
+    duties: dutyList
+      .filter((d) => d?.startsAt && d?.endsAt)
+      .map((d) => ({
+        startsAt: String(d.startsAt),
+        endsAt: String(d.endsAt),
+        status: d.status,
+        id: d.id,
+      })),
   };
 }
 
 export function canAssignGuard(info: GuardAvailabilityInfo) {
   return info.canAssign;
+}
+
+/**
+ * Whether a guard can be assigned a duty that *starts* at `proposedStartMs`.
+ * Recharge uses the latest prior duty end (completed *or* scheduled) before this start.
+ */
+export function availabilityForProposedStart(
+  info: GuardAvailabilityInfo,
+  proposedStartMs: number | null,
+  proposedEndMs: number | null = null,
+  extraDuties: GuardDutyWindow[] = [],
+): ProposedAssignStatus {
+  if (info.state === "disabled") {
+    return { canAssign: false, state: "disabled", label: "Disabled", rechargingUntil: null };
+  }
+  if (proposedStartMs == null || Number.isNaN(proposedStartMs)) {
+    return {
+      canAssign: false,
+      state: info.state,
+      label: "Set start time first",
+      rechargingUntil: info.rechargingUntil,
+    };
+  }
+
+  const proposedDutyDate = getDutyDate(new Date(proposedStartMs).toISOString());
+  const endMs =
+    proposedEndMs != null && !Number.isNaN(proposedEndMs) ? proposedEndMs : proposedStartMs + 1;
+
+  const windows: GuardDutyWindow[] = [...(info.duties ?? []), ...extraDuties];
+  if (info.currentShiftStartsAt && info.currentShiftEndsAt) {
+    const already = windows.some(
+      (d) => d.startsAt === info.currentShiftStartsAt && d.endsAt === info.currentShiftEndsAt,
+    );
+    if (!already) {
+      windows.push({
+        startsAt: info.currentShiftStartsAt,
+        endsAt: info.currentShiftEndsAt,
+        status: info.state,
+      });
+    }
+  }
+
+  for (const duty of windows) {
+    const dStart = new Date(duty.startsAt).getTime();
+    const dEnd = new Date(duty.endsAt).getTime();
+    if (Number.isNaN(dStart) || Number.isNaN(dEnd)) continue;
+
+    const dutyDate = getDutyDate(duty.startsAt);
+    if (proposedDutyDate && dutyDate && dutyDate === proposedDutyDate) {
+      return {
+        canAssign: false,
+        state: (duty.status as GuardAvailabilityState) || info.state,
+        label: "Already has duty that day",
+        rechargingUntil: null,
+      };
+    }
+
+    if (dStart < endMs && dEnd > proposedStartMs) {
+      return {
+        canAssign: false,
+        state: info.state,
+        label: "Overlaps existing duty",
+        rechargingUntil: null,
+      };
+    }
+  }
+
+  let lastEndedMs: number | null = null;
+  if (info.lastShiftEndedAt) {
+    const ended = info.lastShiftEndedAt.getTime();
+    if (!Number.isNaN(ended) && ended < proposedStartMs) lastEndedMs = ended;
+  }
+  for (const duty of windows) {
+    const dEnd = new Date(duty.endsAt).getTime();
+    if (Number.isNaN(dEnd) || dEnd >= proposedStartMs) continue;
+    if (lastEndedMs == null || dEnd > lastEndedMs) lastEndedMs = dEnd;
+  }
+
+  if (lastEndedMs != null) {
+    const earliest = lastEndedMs + GUARD_RECHARGE_MS;
+    if (proposedStartMs < earliest) {
+      return {
+        canAssign: false,
+        state: "recharging",
+        label: "Recharging",
+        rechargingUntil: new Date(earliest),
+      };
+    }
+  }
+
+  return {
+    canAssign: true,
+    state: info.state === "recharging" || info.state === "assigned" ? "available" : info.state,
+    label:
+      info.state === "recharging" || info.state === "available" || info.state === "assigned"
+        ? "Available"
+        : guardAvailabilityLabel(info.state),
+    rechargingUntil: null,
+  };
 }
 
 /** Fallback when roster API unavailable — basic check from shift list only. */
@@ -141,6 +284,8 @@ export function evaluateGuardAvailability(
       lastShiftEndedAt: null,
       rechargingUntil: null,
       msUntilAvailable: null,
+      currentShiftStartsAt: active.startsAt,
+      currentShiftEndsAt: active.endsAt,
     };
   }
 
@@ -153,6 +298,8 @@ export function evaluateGuardAvailability(
       lastShiftEndedAt: null,
       rechargingUntil: null,
       msUntilAvailable: null,
+      currentShiftStartsAt: scheduled.startsAt,
+      currentShiftEndsAt: scheduled.endsAt,
     };
   }
 
@@ -165,6 +312,8 @@ export function evaluateGuardAvailability(
       lastShiftEndedAt: null,
       rechargingUntil: null,
       msUntilAvailable: null,
+      currentShiftStartsAt: missed.startsAt,
+      currentShiftEndsAt: missed.endsAt,
     };
   }
 
@@ -180,6 +329,8 @@ export function evaluateGuardAvailability(
       lastShiftEndedAt: null,
       rechargingUntil: null,
       msUntilAvailable: null,
+      currentShiftStartsAt: upcoming.startsAt,
+      currentShiftEndsAt: upcoming.endsAt,
     };
   }
 

@@ -31,7 +31,6 @@ type CalendarShiftsViewProps = {
     sites: SiteOption[];
     guards: GuardPickerOption[];
     trainingBySite: Record<string, number[]>;
-    updateShiftAction: (formData: FormData) => void | Promise<void>;
     isAdmin?: boolean;
   };
 };
@@ -438,7 +437,6 @@ function ShiftBlock({
         sites={shiftDetail.sites}
         guards={shiftDetail.guards}
         trainingBySite={shiftDetail.trainingBySite}
-        updateShiftAction={shiftDetail.updateShiftAction}
         isAdmin={shiftDetail.isAdmin}
         triggerClassName={cn(
           "flex w-full flex-col gap-0.5 rounded-md border px-1.5 py-1 text-left text-[11px] leading-tight transition hover:brightness-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--portal-accent)]",

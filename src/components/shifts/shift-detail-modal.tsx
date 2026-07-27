@@ -1,5 +1,7 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
 import { CancelShiftForm } from "@/components/dashboard/cancel-shift-form";
 import { DeleteShiftForm } from "@/components/dashboard/delete-shift-form";
 import { DetailTable } from "@/components/portal/detail-table";
@@ -12,9 +14,10 @@ import {
 } from "@/components/shifts/trained-site-guard-picker";
 import { DutyScheduleHint } from "@/components/dashboard/duty-schedule-hint";
 import { ForceAssignField } from "@/components/dashboard/force-assign-field";
-import { UkDateTimeHint } from "@/components/forms/uk-datetime-hint";
+import { ActionFeedback } from "@/components/forms/action-feedback";
 import { formatUkDateTime } from "@/lib/format-datetime";
 import { shiftDutyLabel } from "@/lib/guard-availability";
+import { updateShiftAction } from "@/lib/shift-dashboard-actions";
 import { isoToUkDateTimeLocal } from "@/lib/uk-datetime";
 import type { ReactNode } from "react";
 
@@ -36,9 +39,7 @@ type ShiftDetailModalProps = {
   sites: SiteOption[];
   guards: GuardPickerOption[];
   trainingBySite: Record<string, number[]>;
-  updateShiftAction: (formData: FormData) => void | Promise<void>;
   isAdmin?: boolean;
-  /** Custom open control (e.g. calendar shift block). Defaults to a View button. */
   trigger?: ReactNode;
   triggerClassName?: string;
   triggerLabel?: string;
@@ -49,13 +50,32 @@ export function ShiftDetailModal({
   sites,
   guards,
   trainingBySite,
-  updateShiftAction,
   isAdmin = false,
   trigger,
   triggerClassName = "lunar-btn-secondary lunar-btn-sm",
   triggerLabel = "View",
 }: ShiftDetailModalProps) {
+  const router = useRouter();
   const terminal = shift.status === "cancelled" || shift.status === "completed";
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    setError(null);
+    setSuccess(null);
+    startTransition(async () => {
+      try {
+        const result = await updateShiftAction(fd);
+        setSuccess(result.message);
+        router.refresh();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not update shift.");
+      }
+    });
+  }
 
   return (
     <PortalModal
@@ -99,7 +119,8 @@ export function ShiftDetailModal({
         <>
           <h3 className="portal-section-title mt-5">Edit shift</h3>
           <DutyScheduleHint />
-          <form action={updateShiftAction} className="mt-3 space-y-3">
+          <form onSubmit={onSubmit} className="mt-3 space-y-3">
+            <ActionFeedback success={success} error={error} />
             <input type="hidden" name="id" value={String(shift.id)} />
             <TrainedSiteGuardPicker
               sites={sites}
@@ -107,30 +128,10 @@ export function ShiftDetailModal({
               trainingBySite={trainingBySite}
               defaultSiteId={shift.siteId}
               defaultGuardId={shift.userId}
+              defaultStartsAt={isoToUkDateTimeLocal(shift.startsAt)}
+              defaultEndsAt={isoToUkDateTimeLocal(shift.endsAt)}
+              allowUnavailable
             />
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <label className="block text-sm text-[var(--portal-text-muted)]">
-                Start (UK)
-                <input
-                  name="startsAt"
-                  type="datetime-local"
-                  required
-                  defaultValue={isoToUkDateTimeLocal(shift.startsAt)}
-                  className="mt-1 w-full lunar-input"
-                />
-              </label>
-              <label className="block text-sm text-[var(--portal-text-muted)]">
-                End (UK)
-                <input
-                  name="endsAt"
-                  type="datetime-local"
-                  required
-                  defaultValue={isoToUkDateTimeLocal(shift.endsAt)}
-                  className="mt-1 w-full lunar-input"
-                />
-              </label>
-            </div>
-            <UkDateTimeHint />
             <label className="block text-sm text-[var(--portal-text-muted)]">
               Status
               <select name="status" defaultValue={shift.status} className="mt-1 w-full lunar-select capitalize">
@@ -141,8 +142,8 @@ export function ShiftDetailModal({
               </select>
             </label>
             <ForceAssignField isAdmin={isAdmin} />
-            <button type="submit" className="lunar-btn-primary w-full sm:w-auto">
-              Save changes
+            <button type="submit" className="lunar-btn-primary w-full sm:w-auto" disabled={pending}>
+              {pending ? "Saving…" : "Save changes"}
             </button>
           </form>
 

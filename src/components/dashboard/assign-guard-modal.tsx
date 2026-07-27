@@ -1,6 +1,6 @@
 import { AssignShiftFromSiteForm } from "@/components/dashboard/assign-shift-from-site-form";
 import { PortalModal } from "@/components/portal/portal-modal";
-import type { GuardAvailabilityInfo } from "@/lib/guard-availability";
+import { GUARD_RECHARGE_HOURS, type GuardAvailabilityInfo } from "@/lib/guard-availability";
 
 type TrainedGuardOption = {
   userId: number;
@@ -15,24 +15,21 @@ type AssignGuardModalProps = {
 };
 
 export function AssignGuardModal({ siteId, guards, isAdmin }: AssignGuardModalProps) {
-  const assignable = guards.filter((g) => g.availability.canAssign);
-
   return (
     <PortalModal
       triggerLabel="Assign guard"
-      title="Assign guard"
-      description="Pick a trained guard who is assignable and set the shift window."
+      title="Assign shift"
+      description={`Times first, then a trained guard free for that start. Use “Add another shift” for multiple. ${GUARD_RECHARGE_HOURS}h rest after prior duties (completed or scheduled).`}
       triggerClassName="lunar-btn-primary lunar-btn-sm sm:lunar-btn-primary"
       size="lg"
     >
       {guards.length === 0 ? (
-        <p className="text-sm text-[var(--portal-text-muted)]">No guards are trained for this site yet. Add training on the Trained guards tab.</p>
-      ) : assignable.length === 0 ? (
-        <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          No guards can be assigned right now. Try again when someone is available.
+        <p className="text-sm text-[var(--portal-text-muted)]">
+          No guards are trained for this site yet. Add training on the Trained guards tab.
         </p>
-      ) : null}
-      <AssignShiftFromSiteForm siteId={siteId} guards={guards} isAdmin={isAdmin} />
+      ) : (
+        <AssignShiftFromSiteForm siteId={siteId} guards={guards} isAdmin={isAdmin} />
+      )}
     </PortalModal>
   );
 }

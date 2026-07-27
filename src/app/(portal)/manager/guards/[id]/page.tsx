@@ -8,7 +8,6 @@ import { FocusDashboardHeader } from "@/components/portal/focus-dashboard-header
 import { PortalTableCard } from "@/components/portal/portal-table-card";
 import { GuardTrainedSitesTab } from "@/components/dashboard/guard-trained-sites-tab";
 import { ScheduleShiftModal } from "@/components/dashboard/schedule-shift-modal";
-import { WeekScheduleModal } from "@/components/dashboard/week-schedule-modal";
 import { AttendanceTimeline } from "@/components/dashboard/attendance-timeline";
 import { DashboardAlerts } from "@/components/dashboard/dashboard-alerts";
 import { DashboardQuickLinks } from "@/components/dashboard/dashboard-quick-links";
@@ -137,7 +136,17 @@ export default async function GuardDashboardPage({ params, searchParams }: Guard
 
   const data = dashRes.data!;
   const guardName = displayGuardName(data.user.fullName, data.user.email);
-  const availability = mapBackendAvailability(data.availability);
+  const dutyWindows =
+    data.availability.duties ??
+    data.shifts
+      .filter((s) => s.status !== "cancelled" && s.status !== "completed")
+      .map((s) => ({
+        id: s.id,
+        startsAt: s.startsAt,
+        endsAt: s.endsAt,
+        status: s.status,
+      }));
+  const availability = mapBackendAvailability(data.availability, data.currentShift, dutyWindows);
   const canAssign = availability.canAssign;
   const isAdmin = session.user.role === "admin";
   const trainedSitesForSchedule = data.trainedSites.map((s) => ({
@@ -181,16 +190,12 @@ export default async function GuardDashboardPage({ params, searchParams }: Guard
             status={data.user.status}
             availability={availability}
           />
-          <WeekScheduleModal
-            userId={userId}
-            trainedSites={trainedSitesForSchedule}
-            isAdmin={isAdmin}
-          />
           <ScheduleShiftModal
             userId={userId}
             canAssign={canAssign}
             trainedSites={trainedSitesForSchedule}
             isAdmin={isAdmin}
+            availability={availability}
           />
         </div>
       </FocusDashboardHeader>

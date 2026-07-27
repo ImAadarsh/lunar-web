@@ -5,7 +5,7 @@ import { ScheduleShiftModal } from "@/components/dashboard/schedule-shift-modal"
 import { GuardAvailabilityBadge } from "@/components/portal/guard-availability-badge";
 import { PortalClientDataTable, type PortalClientColumn } from "@/components/portal/portal-client-data-table";
 import { formatUkDateTime } from "@/lib/format-datetime";
-import { guardAvailabilityLabel, type GuardAvailabilityInfo } from "@/lib/guard-availability";
+import { type GuardAvailabilityInfo } from "@/lib/guard-availability";
 import { parseApiDateTime, UK_TIME_ZONE } from "@/lib/uk-datetime";
 
 export type GuardNextShift = {
@@ -54,23 +54,6 @@ function formatShiftWindow(startsAt: string, endsAt: string): string {
       ? ukTimeFmt.format(end)
       : `${ukDayFmt.format(end)}, ${ukTimeFmt.format(end)}`;
   return `${startLabel} – ${endLabel}`;
-}
-
-/** Short reason when Assign Now is disabled (mirrors prior "Ready for assignment" copy). */
-function assignBlockedReason(availability: GuardAvailabilityInfo): string {
-  if (availability.state === "recharging" && availability.rechargingUntil) {
-    return `Recharging until ${formatUkDateTime(availability.rechargingUntil)}`;
-  }
-  if (availability.state === "on_duty" || availability.state === "duty_not_started") {
-    return "When current shift ends";
-  }
-  if (availability.state === "assigned") {
-    return "After upcoming shift";
-  }
-  if (availability.state === "disabled") {
-    return "Account disabled";
-  }
-  return guardAvailabilityLabel(availability.state);
 }
 
 type ManagerGuardAvailabilityTableProps = {
@@ -140,19 +123,16 @@ export function ManagerGuardAvailabilityTable({
       id: "assign",
       label: "Assign",
       sortable: true,
-      sortValue: (r) => (r.availability.canAssign || isAdmin ? 0 : 1),
+      sortValue: (r) => (r.availability.state === "disabled" ? 1 : 0),
       render: (row) => {
         const trainedSites = trainedSitesByUserId[String(row.id)] ?? [];
-        // Admins can open the modal to force-assign even when canAssign is false.
-        const canOpen = row.availability.canAssign || isAdmin;
-        if (!canOpen) {
-          const reason = assignBlockedReason(row.availability);
+        if (row.availability.state === "disabled") {
           return (
             <button
               type="button"
               disabled
-              title={reason}
-              aria-label={`Assign Now unavailable: ${reason}`}
+              title="Guard account is disabled"
+              aria-label="Assign Now unavailable: guard disabled"
               className="lunar-btn-secondary lunar-btn-sm cursor-not-allowed opacity-50"
             >
               Assign Now
@@ -165,6 +145,7 @@ export function ManagerGuardAvailabilityTable({
             canAssign={row.availability.canAssign}
             trainedSites={trainedSites}
             isAdmin={isAdmin}
+            availability={row.availability}
             triggerLabel="Assign Now"
           />
         );
