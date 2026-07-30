@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { ForceAssignField } from "@/components/dashboard/force-assign-field";
 import { DutyScheduleHint } from "@/components/dashboard/duty-schedule-hint";
+import { applyShiftActionResult } from "@/lib/shift-action-result";
 import { bulkScheduleShiftsAction } from "@/lib/shift-dashboard-actions";
 import { formatUkDateTime } from "@/lib/format-datetime";
 import {
@@ -80,8 +81,11 @@ export function WeekScheduleCsvImport({ userId, trainedSites, isAdmin }: WeekSch
     setErrors([]);
     setSuccess(null);
     try {
-      await bulkScheduleShiftsAction(fd);
-      setSuccess(`${preview.length} shift${preview.length === 1 ? "" : "s"} imported.`);
+      const result = await bulkScheduleShiftsAction(fd);
+      applyShiftActionResult(result, {
+        onSuccess: setSuccess,
+        onError: (message) => setErrors([message]),
+      });
     } catch (err) {
       setErrors([err instanceof Error ? err.message : "Could not import shifts. Please try again."]);
     } finally {

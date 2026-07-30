@@ -15,6 +15,7 @@ import {
   type GuardDutyWindow,
 } from "@/lib/guard-availability";
 import { formatUkDateTime } from "@/lib/format-datetime";
+import { goToLogin } from "@/lib/session-expired";
 import { ukDateTimeLocalToIso } from "@/lib/uk-datetime";
 
 type TrainedSiteOption = {
@@ -113,13 +114,19 @@ export function AssignShiftFromGuardForm({
     setSuccess(null);
     try {
       const result = await bulkScheduleShiftsAction(fd);
-      setSuccess(result.message);
-      setRows([newRow()]);
-      if (!lockedSiteId) setSiteId("");
-      setForce(false);
+      if (result.ok) {
+        setSuccess(result.message);
+        setRows([newRow()]);
+        if (!lockedSiteId) setSiteId("");
+        setForce(false);
+      } else {
+        setError(result.message);
+        if (result.sessionExpired) goToLogin();
+      }
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save shifts.");
+      router.refresh();
     } finally {
       setSaving(false);
     }

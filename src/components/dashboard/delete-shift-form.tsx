@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { ActionFeedback } from "@/components/forms/action-feedback";
+import { applyShiftActionResult } from "@/lib/shift-action-result";
 import { deleteShiftAction } from "@/lib/shift-dashboard-actions";
 
 type DeleteShiftFormProps = {
@@ -38,11 +39,11 @@ export function DeleteShiftForm({
     startTransition(async () => {
       try {
         const result = await deleteShiftAction(fd);
-        setSuccess(result.message);
-        router.refresh();
+        applyShiftActionResult(result, { onSuccess: setSuccess, onError: setError });
       } catch (err) {
         setError(err instanceof Error ? err.message : "Could not delete shift.");
       }
+      router.refresh();
     });
   }
 

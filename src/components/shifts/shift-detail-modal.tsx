@@ -17,6 +17,7 @@ import { ForceAssignField } from "@/components/dashboard/force-assign-field";
 import { ActionFeedback } from "@/components/forms/action-feedback";
 import { formatUkDateTime } from "@/lib/format-datetime";
 import { shiftDutyLabel } from "@/lib/guard-availability";
+import { applyShiftActionResult } from "@/lib/shift-action-result";
 import { updateShiftAction } from "@/lib/shift-dashboard-actions";
 import { isoToUkDateTimeLocal } from "@/lib/uk-datetime";
 import type { ReactNode } from "react";
@@ -69,11 +70,11 @@ export function ShiftDetailModal({
     startTransition(async () => {
       try {
         const result = await updateShiftAction(fd);
-        setSuccess(result.message);
-        router.refresh();
+        applyShiftActionResult(result, { onSuccess: setSuccess, onError: setError });
       } catch (err) {
         setError(err instanceof Error ? err.message : "Could not update shift.");
       }
+      router.refresh();
     });
   }
 

@@ -60,7 +60,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         </div>
 
         <p className="mt-6 text-center text-xs text-lunar-300/70">
-          Secure operations platform · Endeavour Digital
+          Secure operations platform
         </p>
       </div>
     </div>

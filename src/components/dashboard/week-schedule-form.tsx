@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { ForceAssignField } from "@/components/dashboard/force-assign-field";
 import { DutyScheduleHint } from "@/components/dashboard/duty-schedule-hint";
+import { applyShiftActionResult } from "@/lib/shift-action-result";
 import { bulkScheduleShiftsAction } from "@/lib/shift-dashboard-actions";
 import {
   availabilityForProposedStart,
@@ -128,8 +129,8 @@ export function WeekScheduleForm({
     setError(null);
     setSuccess(null);
     try {
-      await bulkScheduleShiftsAction(fd);
-      setSuccess(`${n} shift${n === 1 ? "" : "s"} saved.`);
+      const result = await bulkScheduleShiftsAction(fd);
+      applyShiftActionResult(result, { onSuccess: setSuccess, onError: setError });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save shifts. Please try again.");
     } finally {

@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { ActionFeedback } from "@/components/forms/action-feedback";
+import { applyShiftActionResult } from "@/lib/shift-action-result";
 import { cancelShiftAction } from "@/lib/shift-dashboard-actions";
 
 type CancelShiftFormProps = {
@@ -26,11 +27,11 @@ export function CancelShiftForm({ shiftId, guardId, siteId, label = "Cancel shif
     startTransition(async () => {
       try {
         const result = await cancelShiftAction(fd);
-        setSuccess(result.message);
-        router.refresh();
+        applyShiftActionResult(result, { onSuccess: setSuccess, onError: setError });
       } catch (err) {
         setError(err instanceof Error ? err.message : "Could not cancel shift.");
       }
+      router.refresh();
     });
   }
 

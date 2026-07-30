@@ -13,6 +13,7 @@ import {
   type GuardAvailabilityInfo,
   type GuardDutyWindow,
 } from "@/lib/guard-availability";
+import { goToLogin } from "@/lib/session-expired";
 import { ukDateTimeLocalToIso } from "@/lib/uk-datetime";
 
 type TrainedGuardOption = {
@@ -114,12 +115,23 @@ export function AssignShiftFromSiteForm({ siteId, guards, isAdmin }: AssignShift
     setSuccess(null);
     try {
       const result = await assignMultipleSiteShiftsAction(fd);
-      setSuccess(result.message);
-      setRows([newRow()]);
-      setForce(false);
+      if (result.ok) {
+        setSuccess(result.message);
+        setRows([newRow()]);
+        setForce(false);
+      } else {
+        setError(result.message);
+        // Drop the rows that were written so a retry cannot duplicate them.
+        if (result.failedRows?.length) {
+          const keep = new Set(result.failedRows);
+          setRows((prev) => prev.filter((_, i) => keep.has(i)));
+        }
+        if (result.sessionExpired) goToLogin();
+      }
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save shifts.");
+      router.refresh();
     } finally {
       setSaving(false);
     }

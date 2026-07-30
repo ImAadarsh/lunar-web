@@ -32,6 +32,9 @@ export async function middleware(req: NextRequest) {
     if (refreshed.ok) {
       activeSession = refreshed.session;
       refreshedPayload = JSON.stringify(refreshed.session);
+      // Also update the forwarded request so this render / server action reads the
+      // new token instead of the expiring one still sitting in the browser cookie.
+      req.cookies.set(SESSION_COOKIE_NAME, refreshedPayload);
     } else if (refreshed.reason === "unauthorized" && isAccessTokenExpired(session.accessToken)) {
       // Only hard-logout when the access token is already dead and refresh was rejected.
       // Transient backend/network failures (or refresh races) must not wipe the cookie.
@@ -57,7 +60,7 @@ export async function middleware(req: NextRequest) {
     return withCookie(NextResponse.redirect(new URL("/forbidden", req.url)));
   }
 
-  return withCookie(NextResponse.next());
+  return withCookie(NextResponse.next({ request: { headers: req.headers } }));
 }
 
 export const config = {

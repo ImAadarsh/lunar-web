@@ -8,6 +8,7 @@ import {
   type GuardPickerOption,
   type SiteOption,
 } from "@/components/shifts/trained-site-guard-picker";
+import { applyShiftActionResult } from "@/lib/shift-action-result";
 import { assignGuardShiftAction } from "@/lib/shift-dashboard-actions";
 
 type ManagerAssignShiftFormProps = {
@@ -31,12 +32,13 @@ export function ManagerAssignShiftForm({ sites, guards, trainingBySite }: Manage
     startTransition(async () => {
       try {
         const result = await assignGuardShiftAction(fd);
-        setSuccess(result.message);
-        setFormKey((k) => k + 1);
-        router.refresh();
+        if (applyShiftActionResult(result, { onSuccess: setSuccess, onError: setError })) {
+          setFormKey((k) => k + 1);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Could not assign shift.");
       }
+      router.refresh();
     });
   }
 
