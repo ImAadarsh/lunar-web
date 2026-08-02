@@ -8,13 +8,19 @@ type StatusBadgeProps = {
 export function StatusBadge({ status, className }: StatusBadgeProps) {
   const normalized = status.toLowerCase();
   const tone =
-    normalized === "approved" || normalized === "resolved" || normalized === "closed" || normalized === "active"
+    normalized === "approved" ||
+    normalized === "resolved" ||
+    normalized === "closed" ||
+    normalized === "active" ||
+    normalized === "qualified"
       ? "lunar-badge-success"
       : normalized === "pending" ||
           normalized === "open" ||
           normalized === "in_review" ||
           normalized === "acknowledged" ||
-          normalized === "invited"
+          normalized === "invited" ||
+          normalized === "new" ||
+          normalized === "contacted"
         ? "lunar-badge-warning"
         : normalized === "rejected" || normalized === "cancelled" || normalized === "suspended"
           ? "lunar-badge-danger"

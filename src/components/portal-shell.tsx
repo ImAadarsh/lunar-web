@@ -36,6 +36,7 @@ const links: PortalNavLink[] = [
   { href: "/manager/pings", label: "Pings & Chat", roles: ["admin", "supervisor"], icon: <IconChat /> },
   { href: "/manager/incidents", label: "Incidents & SOS", roles: ["admin", "supervisor"], icon: <IconAlert /> },
   { href: "/manager/leave", label: "Leave", roles: ["admin", "supervisor"], icon: <IconCalendar /> },
+  { href: "/manager/leads", label: "Leads", roles: ["admin", "supervisor"], icon: <IconFile /> },
   { href: "/manager/training", label: "Training", roles: ["admin", "supervisor"], icon: <IconBadge /> },
   { href: "/admin/users", label: "Users", roles: ["admin"], icon: <IconUsers /> },
   { href: "/admin/sites", label: "Sites", roles: ["admin"], icon: <IconMapPin /> },
